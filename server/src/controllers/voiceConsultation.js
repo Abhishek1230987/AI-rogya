@@ -357,7 +357,7 @@ export const textConsultation = async (req, res) => {
           FROM medical_reports 
           WHERE user_id = $1 
           ORDER BY uploaded_at DESC 
-          LIMIT 5
+          LIMIT 10
         `;
         const reportsResult = await pool.query(reportsQuery, [req.user.id]);
 
@@ -400,6 +400,37 @@ export const textConsultation = async (req, res) => {
       }
     }
 
+    // Fetch user's past voice consultations for continuity
+    let consultationHistory = [];
+    if (req.user?.id) {
+      try {
+        const pool = (await import("../config/database.js")).default;
+        const historyQuery = `
+          SELECT original_text, ai_response, created_at, detected_language
+          FROM voice_consultations 
+          WHERE user_id = $1 
+          ORDER BY created_at DESC 
+          LIMIT 10
+        `;
+        const historyResult = await pool.query(historyQuery, [req.user.id]);
+
+        if (historyResult.rows.length > 0) {
+          consultationHistory = historyResult.rows.map((consultation) => ({
+            userMessage: consultation.original_text,
+            medicalResponse: consultation.ai_response,
+            timestamp: consultation.created_at,
+            language: consultation.detected_language,
+          }));
+          console.log(
+            `📚 Using ${consultationHistory.length} past voice consultations for context`,
+          );
+        }
+      } catch (historyError) {
+        console.error("Error fetching consultation history:", historyError);
+        // Continue without consultation history
+      }
+    }
+
     // Generate AI response using Gemini
     console.log("🤖 Generating AI response with Gemini...");
     const aiResult = await geminiService.generateMedicalConsultation(
@@ -407,6 +438,7 @@ export const textConsultation = async (req, res) => {
       {
         medicalHistory,
         medicalReports,
+        consultationHistory,
       },
       language, // requestedLanguage forwarded to Gemini
     );
@@ -445,6 +477,7 @@ export const textConsultation = async (req, res) => {
     res.json({
       success: true,
       medicalResponse: aiResult.medicalResponse,
+      sections: aiResult.sections || null,
       detectedLanguage: language || aiResult.detectedLanguage,
       usedMedicalHistory: aiResult.usedMedicalHistory,
       timestamp: aiResult.timestamp,
@@ -624,12 +657,20 @@ export const transcribeUploadHandler = async (req, res) => {
     console.log(`🔤 Received requested language: ${requestedLanguage}`);
 
     // Process audio buffer with optional language hint
-    const { transcript, detectedLanguage, englishTranslation } =
-      await audioProcessingService.processAudio(
-        audioFile.buffer,
-        audioFile.mimetype,
-        requestedLanguage,
-      );
+    const {
+      transcript,
+      detectedLanguage,
+      englishTranslation,
+      isFallback: audioProcessingFallback,
+    } = await audioProcessingService.processAudio(
+      audioFile.buffer,
+      audioFile.mimetype,
+      requestedLanguage,
+    );
+
+    // Declare isFallback flag for this handler
+    let isFallback = false;
+    let aiResult;
 
     // Fetch user's medical history for contextual responses
     let medicalHistory = null;
@@ -761,18 +802,58 @@ export const transcribeUploadHandler = async (req, res) => {
       );
     }
 
-    // Use transcription (original language) when calling Gemini; forward requestedLanguage to Gemini
-    // Now includes patient medical history for contextual responses
-    const aiResult = await geminiService.generateMedicalConsultation(
-      transcript,
-      {
-        medicalHistory,
-        medicalReports,
-      },
-      requestedLanguage === "auto"
-        ? detectedLanguage || "en"
-        : requestedLanguage,
-    );
+    // Check if audio processing returned a fallback (Google Cloud not configured)
+    if (audioProcessingFallback && !transcript) {
+      console.log(
+        "ℹ️ Audio processing fallback triggered - Google Cloud APIs not configured for server-side transcription",
+      );
+      isFallback = true;
+
+      // When server-side transcription isn't available, instead of confusing server message,
+      // return a marker so client can handle this gracefully
+      aiResult = {
+        medicalResponse: null, // Signal to client that this was a fallback
+        sections: null,
+        usedMedicalHistory: false,
+        transcript, // Include what we got (even if null/empty)
+      };
+    } else if (!transcript) {
+      console.warn("⚠️ No transcription available from audio processing");
+      isFallback = true;
+
+      aiResult = {
+        medicalResponse:
+          "We received your audio, but couldn't transcribe it at this moment. Please try using the text input option to describe your symptoms instead, and we'll provide you with a detailed analysis.",
+        sections: null,
+        usedMedicalHistory: false,
+      };
+    } else {
+      // We have a transcription - process with Gemini
+      const actualTranscript = englishTranslation || transcript;
+
+      try {
+        aiResult = await geminiService.generateMedicalConsultation(
+          actualTranscript,
+          {
+            medicalHistory,
+            medicalReports,
+          },
+          requestedLanguage === "auto"
+            ? detectedLanguage || "en"
+            : requestedLanguage,
+        );
+      } catch (geminiError) {
+        console.error("❌ Gemini API error:", geminiError.message);
+
+        // Fallback response when Gemini fails
+        aiResult = {
+          medicalResponse:
+            "Your message was received. Based on your medical information, please consider consulting with a healthcare professional for personalized advice.",
+          sections: null,
+          usedMedicalHistory: !!medicalHistory,
+        };
+      }
+    }
 
     // Save to DB if authenticated
     if (req.user?.id) {
@@ -789,19 +870,32 @@ export const transcribeUploadHandler = async (req, res) => {
       }
     }
 
+    // Don't return a confusing fallback message - let client decide what to show
     res.json({
       success: true,
       transcript,
       detectedLanguage,
       medicalResponse: aiResult.medicalResponse,
+      sections: aiResult.sections || null,
       usedMedicalHistory: aiResult.usedMedicalHistory || !!medicalHistory,
+      isFallback,
+      // Signal that this is a fallback so client can handle gracefully
+      requiresClientTranscription: !transcript && isFallback,
     });
   } catch (error) {
     console.error("❌ Error in transcribeUploadHandler:", error);
-    res.status(500).json({
-      success: false,
-      message: "Transcription failed",
-      error: error.message,
+
+    // Return user-friendly error response instead of 500 error
+    res.json({
+      success: true,
+      transcript: null,
+      detectedLanguage: "en",
+      medicalResponse: null,
+      sections: null,
+      usedMedicalHistory: false,
+      isFallback: true,
+      requiresClientTranscription: true,
+      error: "Audio processing failed",
     });
   }
 };

@@ -92,7 +92,7 @@ export default function Home() {
           >
             <SparklesIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-              Trusted by 10,000+ patients worldwide
+              {t("home.trustedBy")}
             </span>
           </motion.div>
 
@@ -133,7 +133,7 @@ export default function Home() {
                     variant="secondary"
                     className="text-lg px-8 py-3"
                   >
-                    Try Free Consultation
+                    {t("home.tryFreeConsultation")}
                   </AnimatedButton>
                 </Link>
               </>
@@ -152,7 +152,7 @@ export default function Home() {
                     variant="secondary"
                     className="text-lg px-8 py-3"
                   >
-                    Book Appointment
+                    {t("home.bookAppointment")}
                   </AnimatedButton>
                 </Link>
               </>
@@ -190,10 +190,10 @@ export default function Home() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white sm:text-4xl">
-              Why Choose E-Consultancy?
+              {t("home.whyChoose")}
             </h2>
             <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">
-              Experience healthcare like never before.
+              {t("home.experience")}
             </p>
           </div>
 
@@ -230,7 +230,7 @@ export default function Home() {
             <div className="mt-16 text-center">
               <Link to="/register">
                 <AnimatedButton variant="primary" className="text-lg px-8 py-3">
-                  Start Your Journey Today
+                  {t("home.startYourJourney")}
                 </AnimatedButton>
               </Link>
             </div>
@@ -254,9 +254,8 @@ export default function Home() {
                   E-Consultancy
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-4">
-                  Your trusted platform for online medical consultations.
-                  Connect with healthcare professionals from the comfort of your
-                  home, 24/7 access to quality healthcare services.
+                  {t("home.description")}
+                  Access to quality healthcare services.
                 </p>
                 <div className="flex gap-4">
                   <Link to="/dashboard">
@@ -264,7 +263,7 @@ export default function Home() {
                       variant="primary"
                       className="text-sm px-6 py-2"
                     >
-                      Go to Dashboard
+                      {t("home.goToDashboard")}
                     </AnimatedButton>
                   </Link>
                 </div>
@@ -273,7 +272,7 @@ export default function Home() {
               {/* Quick Links */}
               <div>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Quick Links
+                  {t("home.quickLinks")}
                 </h4>
                 <ul className="space-y-2">
                   <li>
@@ -322,7 +321,7 @@ export default function Home() {
               {/* Contact Info */}
               <div>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                  Contact Us
+                  {t("home.contactUs")}
                 </h4>
                 <ul className="space-y-3">
                   <li className="flex items-start gap-2">

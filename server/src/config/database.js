@@ -101,6 +101,77 @@ export const initializeDatabase = async () => {
       )
     `);
 
+    // Create text chat sessions table for conversation threads
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS text_chat_sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        session_name VARCHAR(255) NOT NULL DEFAULT 'General Chat',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_text_chat_sessions_user_created
+      ON text_chat_sessions(user_id, created_at DESC)
+    `);
+
+    // Create text consultations table for chat history persistence
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS text_consultations (
+        id SERIAL PRIMARY KEY,
+        session_id INTEGER REFERENCES text_chat_sessions(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        user_message TEXT NOT NULL,
+        ai_response TEXT NOT NULL,
+        language_used VARCHAR(20) DEFAULT 'en',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_text_consultations_user_created
+      ON text_consultations(user_id, created_at DESC)
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_text_consultations_session_created
+      ON text_consultations(session_id, created_at DESC)
+    `);
+
+    // Migration: ensure session_id column exists for older schemas
+    await client.query(`
+      ALTER TABLE text_consultations
+      ADD COLUMN IF NOT EXISTS session_id INTEGER REFERENCES text_chat_sessions(id) ON DELETE CASCADE
+    `);
+
+    // Migration: create default sessions for users with existing text consultations
+    await client.query(`
+      INSERT INTO text_chat_sessions (user_id, session_name)
+      SELECT DISTINCT tc.user_id, 'General Chat'
+      FROM text_consultations tc
+      WHERE tc.user_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM text_chat_sessions s WHERE s.user_id = tc.user_id
+        )
+    `);
+
+    // Migration: attach old messages without session_id to user's oldest session
+    await client.query(`
+      UPDATE text_consultations tc
+      SET session_id = sub.session_id
+      FROM (
+        SELECT DISTINCT ON (s.user_id)
+          s.user_id,
+          s.id AS session_id
+        FROM text_chat_sessions s
+        ORDER BY s.user_id, s.created_at ASC, s.id ASC
+      ) sub
+      WHERE tc.user_id = sub.user_id
+        AND tc.session_id IS NULL
+    `);
+
     // Create voice_consultations table (using old schema for compatibility)
     await client.query(`
       CREATE TABLE IF NOT EXISTS voice_consultations (

@@ -3,23 +3,45 @@ import { Outlet, Link, useLocation } from "react-router-dom";
 import { Disclosure, Menu, Transition } from "@headlessui/react";
 import { Bars3Icon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useAuth } from "../contexts/AuthContext.jsx";
+import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import BackgroundDecor from "./BackgroundDecor.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
 import SOSNavbarButton from "./SOSNavbarButton.jsx";
 
-const navigation = [
-  { name: "Home", href: "/", public: true },
-  { name: "Dashboard", href: "/dashboard", public: false },
-  { name: "Consultation", href: "/consultation", public: false },
-  { name: "Voice Chat", href: "/voice-consultation", public: false },
-  { name: "Video Call", href: "/video-call", public: false },
-];
-
 function Layout() {
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const location = useLocation();
+
+  const navigation = [
+    { name: t("navigation.home"), href: "/", public: true, key: "home" },
+    {
+      name: t("navigation.dashboard"),
+      href: "/dashboard",
+      public: false,
+      key: "dashboard",
+    },
+    {
+      name: t("navigation.consultation"),
+      href: "/consultation",
+      public: false,
+      key: "consultation",
+    },
+    {
+      name: t("navigation.voiceChat"),
+      href: "/voice-consultation",
+      public: false,
+      key: "voiceChat",
+    },
+    {
+      name: t("navigation.videoCall"),
+      href: "/video-call",
+      public: false,
+      key: "videoCall",
+    },
+  ];
 
   // Filter navigation based on authentication status
   const visibleNavigation = navigation.filter((item) => item.public || user);
@@ -55,7 +77,7 @@ function Layout() {
                         (item.href !== "/" &&
                           location.pathname.startsWith(item.href));
                       return (
-                        <div key={item.name} className="relative">
+                        <div key={item.key} className="relative">
                           <Link
                             to={item.href}
                             className={`inline-flex items-center h-16 px-3 text-sm font-medium transition-colors ${
@@ -129,7 +151,7 @@ function Layout() {
                                     active ? "bg-gray-100 dark:bg-gray-700" : ""
                                   } block px-4 py-2 text-sm text-gray-700 dark:text-gray-200`}
                                 >
-                                  Dashboard
+                                  {t("navigation.dashboard")}
                                 </Link>
                               )}
                             </Menu.Item>
@@ -141,7 +163,7 @@ function Layout() {
                                     active ? "bg-gray-100 dark:bg-gray-700" : ""
                                   } block px-4 py-2 text-sm text-gray-700 dark:text-gray-200`}
                                 >
-                                  Medical History
+                                  {t("navigation.medicalHistory")}
                                 </Link>
                               )}
                             </Menu.Item>
@@ -153,7 +175,7 @@ function Layout() {
                                     active ? "bg-gray-100 dark:bg-gray-700" : ""
                                   } block px-4 py-2 text-sm text-gray-700 dark:text-gray-200`}
                                 >
-                                  Medical Reports
+                                  {t("navigation.medicalReports")}
                                 </Link>
                               )}
                             </Menu.Item>
@@ -169,7 +191,7 @@ function Layout() {
                                     active ? "bg-gray-100 dark:bg-gray-700" : ""
                                   } block w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400`}
                                 >
-                                  Sign out
+                                  {t("navigation.signOut")}
                                 </button>
                               )}
                             </Menu.Item>
@@ -183,13 +205,13 @@ function Layout() {
                         to="/login"
                         className="inline-flex items-center rounded-md px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-50 dark:hover:bg-gray-700 transition-colors"
                       >
-                        Sign in
+                        {t("navigation.signIn")}
                       </Link>
                       <Link
                         to="/register"
                         className="inline-flex items-center rounded-md bg-gradient-to-r from-primary-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:from-primary-700 hover:to-indigo-700 transition-all hover:shadow-md"
                       >
-                        Sign up
+                        {t("navigation.signUp")}
                       </Link>
                     </div>
                   )}
@@ -225,7 +247,7 @@ function Layout() {
                       location.pathname.startsWith(item.href));
                   return (
                     <Link
-                      key={item.name}
+                      key={item.key}
                       to={item.href}
                       className={`block rounded-md px-3 py-2 text-base font-medium ${
                         isActive
@@ -262,19 +284,19 @@ function Layout() {
                       to="/dashboard"
                       className="block rounded-md px-3 py-2 text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
                     >
-                      Dashboard
+                      {t("navigation.dashboard")}
                     </Link>
                     <Link
                       to="/medical-history"
                       className="block rounded-md px-3 py-2 text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
                     >
-                      Medical History
+                      {t("navigation.medicalHistory")}
                     </Link>
                     <Link
                       to="/medical-reports"
                       className="block rounded-md px-3 py-2 text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
                     >
-                      Medical Reports
+                      {t("navigation.medicalReports")}
                     </Link>
 
                     {/* Divider */}
@@ -284,7 +306,7 @@ function Layout() {
                       onClick={logout}
                       className="block w-full text-left rounded-md px-3 py-2 text-base font-medium text-red-600 dark:text-red-400 hover:bg-gray-50 dark:hover:bg-gray-700"
                     >
-                      Sign out
+                      {t("navigation.signOut")}
                     </button>
                   </div>
                 ) : (
@@ -293,13 +315,13 @@ function Layout() {
                       to="/login"
                       className="block rounded-md px-3 py-2 text-base font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white"
                     >
-                      Sign in
+                      {t("navigation.signIn")}
                     </Link>
                     <Link
                       to="/register"
                       className="block rounded-md px-3 py-2 text-base font-medium text-white bg-gradient-to-r from-primary-600 to-indigo-600 hover:from-primary-700 hover:to-indigo-700"
                     >
-                      Sign up
+                      {t("navigation.signUp")}
                     </Link>
                   </div>
                 )}

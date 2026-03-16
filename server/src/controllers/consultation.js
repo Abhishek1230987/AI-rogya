@@ -3,6 +3,54 @@ import { audioProcessingService } from "../services/audioProcessing.js";
 import { geminiService } from "../services/geminiService.js";
 import pool from "../config/database.js";
 
+async function getOrCreateDefaultSession(userId) {
+  const existing = await pool.query(
+    `
+      SELECT id, session_name
+      FROM text_chat_sessions
+      WHERE user_id = $1
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  if (existing.rows.length > 0) {
+    return existing.rows[0];
+  }
+
+  const created = await pool.query(
+    `
+      INSERT INTO text_chat_sessions (user_id, session_name)
+      VALUES ($1, $2)
+      RETURNING id, session_name
+    `,
+    [userId, "General Chat"],
+  );
+
+  return created.rows[0];
+}
+
+async function resolveSessionForUser(userId, requestedSessionId) {
+  if (requestedSessionId) {
+    const sessionResult = await pool.query(
+      `
+        SELECT id, session_name
+        FROM text_chat_sessions
+        WHERE id = $1 AND user_id = $2
+        LIMIT 1
+      `,
+      [requestedSessionId, userId],
+    );
+
+    if (sessionResult.rows.length > 0) {
+      return sessionResult.rows[0];
+    }
+  }
+
+  return getOrCreateDefaultSession(userId);
+}
+
 /**
  * Build a fallback response when Gemini API fails
  * Provides helpful medical guidance without external AI
@@ -154,6 +202,329 @@ export const processAudioConsultation = async (req, res) => {
   }
 };
 
+export const getTextChatSessions = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    await getOrCreateDefaultSession(userId);
+
+    const sessionsResult = await pool.query(
+      `
+        SELECT
+          s.id,
+          s.session_name,
+          s.created_at,
+          s.updated_at,
+          COUNT(tc.id)::int AS message_count,
+          MAX(tc.created_at) AS last_message_at
+        FROM text_chat_sessions s
+        LEFT JOIN text_consultations tc ON tc.session_id = s.id
+        WHERE s.user_id = $1
+        GROUP BY s.id, s.session_name, s.created_at, s.updated_at
+        ORDER BY COALESCE(MAX(tc.created_at), s.created_at) DESC, s.id DESC
+      `,
+      [userId],
+    );
+
+    res.json({
+      success: true,
+      sessions: sessionsResult.rows,
+    });
+  } catch (error) {
+    console.error("Error fetching text chat sessions:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch chat sessions",
+    });
+  }
+};
+
+export const createTextChatSession = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const requestedName = (req.body?.sessionName || "").trim();
+    const sessionName =
+      requestedName || `Chat ${new Date().toLocaleDateString()}`;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    const sessionResult = await pool.query(
+      `
+        INSERT INTO text_chat_sessions (user_id, session_name)
+        VALUES ($1, $2)
+        RETURNING id, session_name, created_at, updated_at
+      `,
+      [userId, sessionName],
+    );
+
+    res.status(201).json({
+      success: true,
+      session: sessionResult.rows[0],
+    });
+  } catch (error) {
+    console.error("Error creating text chat session:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create chat session",
+    });
+  }
+};
+
+export const renameTextChatSession = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const sessionId = Number.parseInt(req.params.sessionId, 10);
+    const sessionName = (req.body?.sessionName || "").trim();
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (!Number.isFinite(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid session id",
+      });
+    }
+
+    if (!sessionName) {
+      return res.status(400).json({
+        success: false,
+        message: "Session name is required",
+      });
+    }
+
+    const updateResult = await pool.query(
+      `
+        UPDATE text_chat_sessions
+        SET session_name = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2 AND user_id = $3
+        RETURNING id, session_name, created_at, updated_at
+      `,
+      [sessionName, sessionId, userId],
+    );
+
+    if (updateResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Chat session not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      session: updateResult.rows[0],
+    });
+  } catch (error) {
+    console.error("Error renaming text chat session:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to rename chat session",
+    });
+  }
+};
+
+// Get text consultation history for the authenticated user
+export const getTextConsultationHistory = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    const parsedLimit = Number.parseInt(req.query.limit, 10);
+    const parsedOffset = Number.parseInt(req.query.offset, 10);
+    const requestedSessionId = Number.parseInt(req.query.sessionId, 10);
+    const limit = Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), 100)
+      : 20;
+    const offset = Number.isFinite(parsedOffset)
+      ? Math.max(parsedOffset, 0)
+      : 0;
+    const activeSession = await resolveSessionForUser(
+      userId,
+      Number.isFinite(requestedSessionId) ? requestedSessionId : null,
+    );
+
+    const historyQuery = `
+      SELECT id, user_message, ai_response, language_used, created_at
+      FROM text_consultations
+      WHERE user_id = $1 AND session_id = $2
+      ORDER BY created_at DESC
+      LIMIT $3 OFFSET $4
+    `;
+
+    const [historyResult, totalResult] = await Promise.all([
+      pool.query(historyQuery, [userId, activeSession.id, limit, offset]),
+      pool.query(
+        "SELECT COUNT(*)::int AS total FROM text_consultations WHERE user_id = $1 AND session_id = $2",
+        [userId, activeSession.id],
+      ),
+    ]);
+
+    const rows = [...historyResult.rows].reverse();
+    const messages = rows.flatMap((row) => [
+      {
+        id: `u-${row.id}`,
+        type: "user",
+        content: row.user_message,
+        timestamp: row.created_at,
+      },
+      {
+        id: `a-${row.id}`,
+        type: "ai",
+        content: row.ai_response,
+        timestamp: row.created_at,
+      },
+    ]);
+
+    const total = totalResult.rows[0]?.total || 0;
+    const loaded = offset + historyResult.rows.length;
+
+    res.json({
+      success: true,
+      session: activeSession,
+      messages,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: loaded < total,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching text consultation history:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch consultation history",
+    });
+  }
+};
+
+// Clear text consultation history for the authenticated user
+export const clearTextConsultationHistory = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const requestedSessionId = Number.parseInt(req.query.sessionId, 10);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (Number.isFinite(requestedSessionId)) {
+      const sessionCheck = await pool.query(
+        "SELECT id FROM text_chat_sessions WHERE id = $1 AND user_id = $2 LIMIT 1",
+        [requestedSessionId, userId],
+      );
+
+      if (sessionCheck.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Chat session not found",
+        });
+      }
+
+      await pool.query(
+        "DELETE FROM text_consultations WHERE user_id = $1 AND session_id = $2",
+        [userId, requestedSessionId],
+      );
+    } else {
+      await pool.query("DELETE FROM text_consultations WHERE user_id = $1", [
+        userId,
+      ]);
+    }
+
+    res.json({
+      success: true,
+      message: "Consultation history cleared",
+    });
+  } catch (error) {
+    console.error("Error clearing text consultation history:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to clear consultation history",
+    });
+  }
+};
+
+export const deleteTextChatSession = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const sessionId = Number.parseInt(req.params.sessionId, 10);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (!Number.isFinite(sessionId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid session id",
+      });
+    }
+
+    const countResult = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM text_chat_sessions WHERE user_id = $1",
+      [userId],
+    );
+
+    if ((countResult.rows[0]?.count || 0) <= 1) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one chat session must remain",
+      });
+    }
+
+    const deleteResult = await pool.query(
+      "DELETE FROM text_chat_sessions WHERE id = $1 AND user_id = $2 RETURNING id",
+      [sessionId, userId],
+    );
+
+    if (deleteResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Chat session not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Chat session deleted",
+    });
+  } catch (error) {
+    console.error("Error deleting text chat session:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete chat session",
+    });
+  }
+};
+
 // Chat consultation with AI
 export const chatConsultation = async (req, res) => {
   try {
@@ -161,7 +532,7 @@ export const chatConsultation = async (req, res) => {
     const userId = req.user?.id || null;
     console.log("💬 Chat consultation request from user:", userId || "guest");
 
-    const { message, language } = req.body;
+    const { message, language, sessionId } = req.body;
 
     if (!message || !message.trim()) {
       return res.status(400).json({
@@ -173,6 +544,15 @@ export const chatConsultation = async (req, res) => {
     // Extract language preference (default to "auto" for auto-detection)
     const requestedLanguage = language || "auto";
     console.log(`🔤 Requested language for chat: ${requestedLanguage}`);
+
+    let activeSession = null;
+    if (userId) {
+      const parsedSessionId = Number.parseInt(sessionId, 10);
+      activeSession = await resolveSessionForUser(
+        userId,
+        Number.isFinite(parsedSessionId) ? parsedSessionId : null,
+      );
+    }
 
     // Fetch user's medical history for context (only if user is authenticated)
     let medicalHistory = null;
@@ -266,14 +646,18 @@ export const chatConsultation = async (req, res) => {
     let medicalReports = [];
     try {
       if (userId) {
+        console.log(`📥 Fetching medical reports for user ${userId}...`);
         const reportsQuery = `
           SELECT id, original_name, document_type, extracted_data, uploaded_at
           FROM medical_reports 
           WHERE user_id = $1 
           ORDER BY uploaded_at DESC 
-          LIMIT 5
+          LIMIT 10
         `;
         const reportsResult = await pool.query(reportsQuery, [userId]);
+        console.log(
+          `   📄 Found ${reportsResult.rows.length} total reports in database`,
+        );
 
         if (reportsResult.rows.length > 0) {
           medicalReports = reportsResult.rows
@@ -302,9 +686,12 @@ export const chatConsultation = async (req, res) => {
             })
             .filter((r) => r.extractedData); // Only include reports with extracted data
 
-          if (medicalReports.length > 0) {
+          console.log(
+            `   ✅ Using ${medicalReports.length} medical reports with extracted data for context`,
+          );
+          if (medicalReports.length === 0 && reportsResult.rows.length > 0) {
             console.log(
-              `📄 Using ${medicalReports.length} medical reports for context`,
+              `   ⚠️ WARNING: Found ${reportsResult.rows.length} reports but none have extracted data!`,
             );
           }
         }
@@ -327,7 +714,7 @@ export const chatConsultation = async (req, res) => {
           FROM voice_consultations 
           WHERE user_id = $1 
           ORDER BY timestamp DESC 
-          LIMIT 5
+          LIMIT 10
         `;
         const historyResult = await pool.query(consultHistoryQuery, [userId]);
 
@@ -402,6 +789,12 @@ export const chatConsultation = async (req, res) => {
         "⚠️ Gemini API failed, using fallback response:",
         geminiError.message,
       );
+      console.error("   Full error details:", {
+        message: geminiError.message,
+        status: geminiError.status,
+        code: geminiError.code,
+        stack: geminiError.stack?.split("\n").slice(0, 3).join("\n"),
+      });
 
       // Provide a helpful fallback response
       const fallbackResponse = buildFallbackResponse(
@@ -410,9 +803,28 @@ export const chatConsultation = async (req, res) => {
         requestedLanguage,
       );
 
+      // Enhance fallback with medical report insights if available
+      let enhancedResponse = fallbackResponse;
+      if (medicalReports.length > 0) {
+        enhancedResponse += "\n\nBased on your medical reports:";
+        medicalReports.forEach((report) => {
+          enhancedResponse += `\n- ${report.fileName}: `;
+          if (report.extractedData) {
+            const data = report.extractedData;
+            if (data.vitals?.length > 0) {
+              enhancedResponse += `Vitals: ${data.vitals.slice(0, 2).join(", ")}. `;
+            }
+            if (data.diagnosis) {
+              enhancedResponse += `Diagnosis: ${data.diagnosis}. `;
+            }
+          }
+        });
+      }
+
       aiResult = {
-        medicalResponse: fallbackResponse,
+        medicalResponse: enhancedResponse,
         detectedLanguage: requestedLanguage || "en",
+        sections: null, // Fallback doesn't generate sections
         usedMedicalHistory: !!medicalHistory,
         source: "Fallback (Gemini unavailable)",
         timestamp: new Date().toISOString(),
@@ -421,9 +833,31 @@ export const chatConsultation = async (req, res) => {
       console.log(" Fallback response generated successfully");
     }
 
+    if (userId) {
+      try {
+        await pool.query(
+          `
+            INSERT INTO text_consultations (session_id, user_id, user_message, ai_response, language_used)
+            VALUES ($1, $2, $3, $4, $5)
+          `,
+          [
+            activeSession?.id || null,
+            userId,
+            message.trim(),
+            aiResult.medicalResponse || "",
+            aiResult.detectedLanguage || requestedLanguage || "en",
+          ],
+        );
+      } catch (saveError) {
+        console.error("⚠️ Failed to store text consultation:", saveError);
+      }
+    }
+
     res.json({
       success: true,
       response: aiResult.medicalResponse,
+      sections: aiResult.sections || null,
+      sessionId: activeSession?.id || null,
       detectedLanguage: aiResult.detectedLanguage,
       usedMedicalHistory: aiResult.usedMedicalHistory,
       timestamp: aiResult.timestamp,

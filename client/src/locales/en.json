@@ -44,7 +44,16 @@
     "cta": {
       "getStarted": "Get Started Free",
       "learnMore": "Learn More"
-    }
+    },
+    "trustedBy": "Trusted by 10,000+ patients worldwide",
+    "tryFreeConsultation": "Try Free Consultation",
+    "bookAppointment": "Book Appointment",
+    "whyChoose": "Why Choose E-Consultancy?",
+    "experience": "Experience healthcare like never before.",
+    "quickLinks": "Quick Links",
+    "contactUs": "Contact Us",
+    "goToDashboard": "Go to Dashboard",
+    "startYourJourney": "Start Your Journey Today"
   },
   "auth": {
     "email": "Email Address",
@@ -172,18 +181,29 @@
     "bmi": "BMI",
     "latestMedicalData": "Latest Medical Data from Reports",
     "reportsAnalyzed": "reports analyzed",
-    "viewReport": "View Report"
+    "viewReport": "View Report",
+    "medicalHistorySummary": "Medical History Summary",
+    "basicInformation": "Basic Information",
+    "age": "Age",
+    "gender": "Gender",
+    "bloodType": "Blood Type",
+    "emergencyContact": "Emergency Contact"
   },
   "navigation": {
     "home": "Home",
     "dashboard": "Dashboard",
-    "voiceConsultation": "Voice Consultation",
-    "medicalHistory": "Medical History",
+    "consultation": "Consultation",
+    "voiceChat": "Voice Chat",
+    "videoCall": "Video Call",
     "appointments": "Appointments",
+    "medicalHistory": "Medical History",
+    "medicalReports": "Medical Reports",
     "reports": "Reports",
     "profile": "Profile",
     "settings": "Settings",
-    "aiConsultation": "AI Consultation"
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signOut": "Sign out"
   },
   "consultation": {
     "title": "AI Medical Consultation",
@@ -196,7 +216,7 @@
     "noChatHistory": "No previous consultations",
     "aiAssistant": "AI Assistant",
     "you": "You",
-  "disclaimer": "💡 This is AI-powered guidance, not a replacement for professional medical advice.",
+    "disclaimer": "💡 This is AI-powered guidance, not a replacement for professional medical advice.",
     "startTyping": "Start by describing your symptoms or medical concern",
     "sampleQueries": {
       "headache": "I have a headache and fever",
@@ -206,7 +226,16 @@
     "exampleQuestions": "Example Questions",
     "example1": "What are the symptoms of diabetes?",
     "example2": "How can I manage high blood pressure?",
-    "example3": "What should I do if I have a fever?"
+    "example3": "What should I do if I have a fever?",
+    "clearCurrentThread": "Clear Current Thread",
+    "continueChat": "Continue Previous Chat",
+    "startNewChat": "Start New Chat",
+    "thread": "Thread",
+    "active": "Active",
+    "guestMode": "Guest mode: local session only",
+    "loadOlderMessages": "Load Older Messages",
+    "confirmDeleteThread": "Delete this chat thread and all its messages?",
+    "renameThread": "Rename Thread"
   },
   "appointments": {
     "title": "Book Appointment",

@@ -64,10 +64,10 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
       if (!SpeechRecognition) {
         setSpeechSupported(false);
         setError(
-          "⚠️ Voice recognition not supported in this browser. Please use Chrome or Edge, or try the text input option below."
+          "⚠️ Voice recognition not supported in this browser. Please use Chrome or Edge, or try the text input option below.",
         );
         console.warn(
-          "Web Speech API not supported. Use Chrome/Edge for voice features."
+          "Web Speech API not supported. Use Chrome/Edge for voice features.",
         );
       } else {
         // Initialize Speech Recognition
@@ -100,12 +100,15 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
           }
         };
 
-        recognition.lang = mapLangToLocale(
-          i18n?.language || localStorage.getItem("selectedLanguage") || "en"
-        );
+        const selectedLang =
+          i18n?.language || localStorage.getItem("selectedLanguage") || "en";
+        const recognitionLang = mapLangToLocale(selectedLang);
+        recognition.lang = recognitionLang;
         recognition.maxAlternatives = 1;
 
-        console.log("🎙️ Speech Recognition initialized (language: en-US)");
+        console.log(
+          `🎙️ Speech Recognition initialized (language: ${recognitionLang})`,
+        );
 
         // Capture speech as user speaks
         recognition.onresult = (event) => {
@@ -134,17 +137,17 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
             console.warn("⚠️ No speech detected, but recording continues");
             // Don't show error - user might still be thinking
           } else if (event.error === "network") {
-            console.error("❌ Network error - Google Speech API unreachable");
+            console.error("❌ Network error - Web Speech API unreachable");
             console.log("💡 This can happen due to:");
             console.log("   - Internet connection issues");
-            console.log("   - Google Speech API quota limits");
+            console.log("   - Browser Speech API rate limits");
             console.log("   - Browser security settings");
             console.log(
-              "📝 Audio recording continues, but speech recognition unavailable"
+              "📝 Audio recording continues - please use text input after recording",
             );
             setSpeechSupported(false);
             setError(
-              "⚠️ Voice recognition temporarily unavailable. Audio is still recording - use text input after recording, or try again later."
+              "⚠️ Browser speech recognition temporarily unavailable. Audio is still recording - you can use text input after recording, or try again in a moment.",
             );
           } else if (
             event.error === "not-allowed" ||
@@ -152,7 +155,7 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
           ) {
             console.error("❌ Microphone permission denied");
             setError(
-              "❌ Microphone access denied. Please allow microphone permissions and try again."
+              "❌ Microphone access denied. Please check your browser's microphone permissions and allow access, then try again.",
             );
             setSpeechSupported(false);
           } else if (event.error === "aborted") {
@@ -161,7 +164,7 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
           } else {
             console.error("❌ Speech recognition error:", event.error);
             setError(
-              `⚠️ Voice recognition error: ${event.error}. Try text input instead.`
+              `⚠️ Voice recognition encountered an issue: ${event.error}. Please try text input instead, or check your microphone settings.`,
             );
           }
         };
@@ -176,7 +179,7 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
             } catch (restartError) {
               console.warn(
                 "⚠️ Could not restart recognition:",
-                restartError.message
+                restartError.message,
               );
             }
           }
@@ -334,7 +337,7 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
           const errorData = await response.json().catch(() => null);
           console.error("❌ Server error:", errorData);
           throw new Error(
-            errorData?.message || `Consultation failed: ${response.status}`
+            errorData?.message || `Consultation failed: ${response.status}`,
           );
         }
 
@@ -343,7 +346,7 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
 
         if (!result.success) {
           throw new Error(
-            result.message || "Failed to process voice consultation"
+            result.message || "Failed to process voice consultation",
           );
         }
 
@@ -354,7 +357,8 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
             recognizedText,
             recognizedText,
             result.medicalResponse,
-            i18n?.language || localStorage.getItem("selectedLanguage") || "en"
+            i18n?.language || localStorage.getItem("selectedLanguage") || "en",
+            result.sections || null,
           );
         }
 
@@ -377,7 +381,9 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
             form.append("audio", audioBlob, "recording.webm");
             form.append(
               "language",
-              i18n?.language || localStorage.getItem("selectedLanguage") || "en"
+              i18n?.language ||
+                localStorage.getItem("selectedLanguage") ||
+                "en",
             );
 
             setIsProcessing(true);
@@ -393,20 +399,34 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
             if (!resp.ok) {
               const err = await resp.json().catch(() => null);
               throw new Error(
-                err?.message || `Transcription failed: ${resp.status}`
+                err?.message || `Transcription failed: ${resp.status}`,
               );
             }
 
             const data = await resp.json();
             console.log("Transcription result:", data);
 
-            setTranscription(data.transcription || "");
+            // Check if server was able to transcribe
+            if (data.requiresClientTranscription || !data.transcript) {
+              console.warn("⚠️ Server-side transcription not available");
+              setError(
+                "⚠️ Couldn't process audio transcription. Please try:\n" +
+                  "1. Use the text input field below to type your question, OR\n" +
+                  "2. Allow microphone permissions for better browser-based recognition\n" +
+                  "3. Try recording again in a quiet environment",
+              );
+              setIsProcessing(false);
+              return;
+            }
+
+            setTranscription(data.transcript || "");
             if (onTranscriptionReceived) {
               onTranscriptionReceived(
-                data.originalMessage || "",
-                data.transcription || "",
+                data.originalMessage || data.transcript || "",
+                data.transcript || "",
                 data.medicalResponse || "",
-                data.detectedLanguage || i18n?.language || "en"
+                data.detectedLanguage || i18n?.language || "en",
+                data.sections || null,
               );
             }
           } catch (uploadErr) {
@@ -417,10 +437,10 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
           }
         } else {
           setError(
-            "⚠️ No speech was recognized. Please try:\n" +
-              "1. Use the text input field below to type your question, OR\n" +
-              "2. Check your microphone settings and try recording again\n" +
-              "3. Ensure you're using Chrome or Edge browser"
+            "⚠️ Your voice wasn't captured. Please:\n" +
+              "1. Check microphone is enabled and you have permission\n" +
+              "2. Try speaking louder or closer to the microphone\n" +
+              "3. Or use the text input field below to type your question instead",
           );
         }
       }

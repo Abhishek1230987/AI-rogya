@@ -21,10 +21,37 @@ export class AudioProcessingService {
    */
   async processAudio(audioBuffer, mimeType, language = "auto") {
     try {
+      console.log("🔊 Starting audio processing...");
+      console.log(
+        `   - Audio size: ${(audioBuffer.length / 1024).toFixed(2)}KB`,
+      );
+      console.log(`   - MIME type: ${mimeType}`);
+      console.log(`   - Language: ${language}`);
+
+      // Check if Google Cloud credentials are configured
+      if (
+        !process.env.GOOGLE_CLOUD_PROJECT_ID ||
+        process.env.GOOGLE_CLOUD_PROJECT_ID === "your-project-id"
+      ) {
+        console.warn(
+          "⚠️ Google Cloud APIs not configured - cannot transcribe server-side. Return marker for frontend fallback.",
+        );
+        return {
+          transcript: null, // Mark as fallback
+          detectedLanguage: language === "auto" ? "en" : language,
+          englishTranslation: null,
+          isFallback: true,
+          error:
+            "Google Cloud not configured - frontend should handle transcription",
+        };
+      }
+
       // Upload audio to Cloud Storage temporarily
       const fileName = `audio-${uuidv4()}`;
       const bucket = storage.bucket(this.bucketName);
       const file = bucket.file(fileName);
+
+      console.log("📤 Uploading audio to Cloud Storage...");
       await file.save(audioBuffer, {
         metadata: { contentType: mimeType },
       });
@@ -56,6 +83,7 @@ export class AudioProcessingService {
       };
 
       const languageCode = mapToLocale(language);
+      console.log(`🔤 Speech recognition language: ${languageCode}`);
 
       // Perform speech recognition
       const [response] = await speechClient.recognize({
@@ -66,7 +94,7 @@ export class AudioProcessingService {
           encoding: "LINEAR16",
           sampleRateHertz: 16000,
           languageCode: languageCode,
-          alternativeLanguageCodes: ["en-US", "hi-IN"], // Support for multiple languages
+          alternativeLanguageCodes: ["en-US", "hi-IN"],
         },
       });
 
@@ -76,9 +104,14 @@ export class AudioProcessingService {
         .join("\n");
       const detectedLanguage = response.results[0]?.languageCode || "unknown";
 
+      console.log(
+        `✅ Transcription successful: "${transcription.substring(0, 50)}..."`,
+      );
+
       // Translate to English if not in English
       let englishTranslation = transcription;
       if (detectedLanguage !== "en-US") {
+        console.log("🌐 Translating to English...");
         const [translation] = await translationClient.translateText({
           parent: `projects/${this.projectId}/locations/global`,
           contents: [transcription],
@@ -88,6 +121,7 @@ export class AudioProcessingService {
         });
 
         englishTranslation = translation.translations[0].translatedText;
+        console.log(`✅ Translation complete`);
       }
 
       // Clean up - delete the temporary file
@@ -97,6 +131,7 @@ export class AudioProcessingService {
         transcript: transcription,
         detectedLanguage,
         englishTranslation,
+        isFallback: false,
       };
     } catch (error) {
       console.error("Error processing audio:", error);

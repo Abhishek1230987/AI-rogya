@@ -32,6 +32,8 @@ export const API_ENDPOINTS = {
 
   // Consultation
   CONSULTATION_CHAT: `${API_URL}/api/consultation/chat`,
+  CONSULTATION_HISTORY: `${API_URL}/api/consultation/history`,
+  CONSULTATION_SESSIONS: `${API_URL}/api/consultation/sessions`,
 
   // Appointments
   HOSPITALS_NEARBY: `${API_URL}/api/hospitals/nearby`,

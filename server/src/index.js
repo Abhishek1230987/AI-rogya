@@ -86,14 +86,25 @@ app.use((req, res, next) => {
   next();
 });
 
-// File upload middleware for SOS audio
-app.use(
+// File upload middleware - ONLY for SOS endpoint (NOT for voice/audio via multer routes)
+// This conflicts with multer, so we'll conditionally apply it
+app.use((req, res, next) => {
+  // Skip express-fileupload for routes that use multer
+  if (
+    req.path.startsWith("/api/voice/") ||
+    req.path.startsWith("/api/consultation/process-audio") ||
+    req.path.startsWith("/api/medical-reports")
+  ) {
+    return next();
+  }
+
+  // Use fileUpload for other routes (like SOS)
   fileUpload({
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
     abortOnLimit: true,
     responseOnLimit: "File size exceeded",
-  }),
-);
+  })(req, res, next);
+});
 
 // Static files - serve uploaded files
 app.use("/uploads", express.static("uploads"));

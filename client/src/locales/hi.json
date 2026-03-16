@@ -163,11 +163,16 @@
     "dashboard": "डैशबोर्ड",
     "consultation": "परामर्श",
     "voiceChat": "आवाज चैट",
+    "videoCall": "वीडियो कॉल",
     "appointments": "नियुक्तियां",
     "medicalHistory": "चिकित्सा इतिहास",
+    "medicalReports": "चिकित्सा रिपोर्ट",
     "reports": "रिपोर्ट",
     "profile": "प्रोफाइल",
-    "settings": "सेटिंग्स"
+    "settings": "सेटिंग्स",
+    "signIn": "साइन इन करें",
+    "signUp": "साइन अप करें",
+    "signOut": "साइन आउट करें"
   },
   "consultation": {
     "title": "AI परामर्श",
@@ -180,7 +185,16 @@
     "newChat": "नया चैट",
     "chatHistory": "चैट इतिहास",
     "noChatHistory": "कोई चैट इतिहास नहीं",
-    "disclaimer": "यह AI सहायता केवल सूचनात्मक उद्देश्यों के लिए है। गंभीर मुद्दों के लिए कृपया पेशेवर चिकित्सा सहायता लें।"
+    "disclaimer": "यह AI सहायता केवल सूचनात्मक उद्देश्यों के लिए है। गंभीर मुद्दों के लिए कृपया पेशेवर चिकित्सा सहायता लें।",
+    "clearCurrentThread": "वर्तमान थ्रेड साफ करें",
+    "continueChat": "पिछली चैट जारी रखें",
+    "startNewChat": "नई चैट शुरू करें",
+    "thread": "थ्रेड",
+    "active": "सक्रिय",
+    "guestMode": "अतिथि मोड: स्थानीय सत्र केवल",
+    "loadOlderMessages": "पुराने संदेश लोड करें",
+    "confirmDeleteThread": "इस चैट थ्रेड और इसके सभी संदेशों को हटाएं?",
+    "renameThread": "थ्रेड का नाम बदलें"
   },
   "appointments": {
     "title": "नियुक्तियां",

@@ -49,7 +49,7 @@ function generateFileName(originalName) {
 async function saveReportToDatabase(pool, userId, fileData) {
   const query = `
     INSERT INTO medical_reports 
-    (user_id, original_name, file_name, file_path, file_size, mime_type, extracted_info, document_type, uploaded_at)
+    (user_id, original_name, file_name, file_path, file_size, mime_type, extracted_data, document_type, uploaded_at)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
     RETURNING *;
   `;
@@ -61,7 +61,7 @@ async function saveReportToDatabase(pool, userId, fileData) {
     fileData.savedPath, // file_path - same as file_name
     fileData.fileSize,
     fileData.mimeType,
-    JSON.stringify(fileData.analysis), // extracted_info
+    JSON.stringify(fileData.analysis), // extracted_data
     "Medical Report",
   ];
 
@@ -86,7 +86,7 @@ async function getUserReports(pool, userId) {
     mimeType: row.mime_type,
     uploadedAt: row.uploaded_at,
     documentType: row.document_type,
-    analysis: row.extracted_info, // Include the extracted analysis data
+    analysis: row.extracted_data, // Include the extracted analysis data
   }));
 }
 

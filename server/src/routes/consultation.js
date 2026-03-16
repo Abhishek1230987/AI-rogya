@@ -6,6 +6,12 @@ import {
   createMedicalHistory,
   processAudioConsultation,
   chatConsultation,
+  getTextChatSessions,
+  createTextChatSession,
+  renameTextChatSession,
+  getTextConsultationHistory,
+  clearTextConsultationHistory,
+  deleteTextChatSession,
 } from "../controllers/consultation.js";
 
 const router = express.Router();
@@ -22,6 +28,16 @@ router.post("/chat", optionalAuth, chatConsultation);
 
 // Protected routes - Require authentication
 router.use(auth);
+
+// Text chat session routes
+router.get("/sessions", getTextChatSessions);
+router.post("/sessions", createTextChatSession);
+router.patch("/sessions/:sessionId", renameTextChatSession);
+router.delete("/sessions/:sessionId", deleteTextChatSession);
+
+// Text consultation history routes
+router.get("/history", getTextConsultationHistory);
+router.delete("/history", clearTextConsultationHistory);
 
 // Medical history routes
 router.get("/medical-history", getMedicalHistory);

@@ -75,7 +75,7 @@ export default function VoiceConsultation() {
 
       console.log(
         "🔑 Token found, fetching from:",
-        API_ENDPOINTS.VOICE_HISTORY
+        API_ENDPOINTS.VOICE_HISTORY,
       );
 
       const response = await fetch(API_ENDPOINTS.VOICE_HISTORY, {
@@ -101,7 +101,7 @@ export default function VoiceConsultation() {
         console.error(
           "❌ Failed to load consultation history:",
           response.status,
-          errorText
+          errorText,
         );
       }
     } catch (error) {
@@ -213,7 +213,8 @@ export default function VoiceConsultation() {
     originalMessage,
     transcription,
     medicalResponse,
-    detectedLanguage = "en"
+    detectedLanguage = "en",
+    sections = null,
   ) => {
     const consultation = {
       id: Date.now(),
@@ -221,6 +222,7 @@ export default function VoiceConsultation() {
       originalMessage: originalMessage || transcription,
       transcription: transcription,
       response: medicalResponse,
+      sections: sections,
       detectedLanguage: detectedLanguage,
       audioUrl: null,
     };
@@ -258,7 +260,8 @@ export default function VoiceConsultation() {
             textInput.trim(),
             textInput.trim(),
             data.medicalResponse,
-            i18n?.language || localStorage.getItem("selectedLanguage") || "en"
+            i18n?.language || localStorage.getItem("selectedLanguage") || "en",
+            data.sections || null,
           );
           setTextInput("");
 
@@ -370,7 +373,7 @@ export default function VoiceConsultation() {
       "🌍 Selected language:",
       selectedLangCode,
       "→ Locale:",
-      language
+      language,
     );
 
     // Get available voices (wait for them to load)
@@ -408,7 +411,7 @@ export default function VoiceConsultation() {
       selectedVoice = voices.find(
         (voice) =>
           voice.name.toLowerCase().includes("google") &&
-          voice.lang.startsWith(langCode)
+          voice.lang.startsWith(langCode),
       );
     }
 
@@ -418,7 +421,7 @@ export default function VoiceConsultation() {
         "✅ Selected voice:",
         selectedVoice.name,
         "-",
-        selectedVoice.lang
+        selectedVoice.lang,
       );
     } else {
       console.warn("⚠️ No voice found for", language, "- using default");
@@ -443,7 +446,7 @@ export default function VoiceConsultation() {
         const useServerTTS = confirm(
           `Your browser doesn't have a ${langName} voice installed.\n\n` +
             `Would you like to use high-quality cloud text-to-speech instead?\n\n` +
-            `(This will send the text to our server for narration)`
+            `(This will send the text to our server for narration)`,
         );
 
         if (useServerTTS) {
@@ -473,7 +476,7 @@ export default function VoiceConsultation() {
         "🔊 Started speaking in:",
         language,
         "with voice:",
-        utterance.voice?.name || "default"
+        utterance.voice?.name || "default",
       );
     };
 
@@ -490,7 +493,7 @@ export default function VoiceConsultation() {
       if (language !== "en-US" && event.error !== "canceled") {
         const retry = confirm(
           `Browser text-to-speech failed.\n\n` +
-            `Would you like to try cloud-based narration instead?`
+            `Would you like to try cloud-based narration instead?`,
         );
         if (retry) {
           handleServerNarration(text, language);
@@ -558,7 +561,7 @@ export default function VoiceConsultation() {
           "Please try:\n" +
           "1. Using Chrome browser for better voice support\n" +
           "2. Updating your browser to the latest version\n" +
-          "3. Installing language voice packs on your device"
+          "3. Installing language voice packs on your device",
       );
     }
   };
@@ -843,7 +846,7 @@ export default function VoiceConsultation() {
                                 isSpeaking
                                   ? stopNarration()
                                   : handleNarration(
-                                      currentConsultation.response
+                                      currentConsultation.response,
                                     )
                               }
                               className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all ${
@@ -890,9 +893,110 @@ export default function VoiceConsultation() {
                         )}
 
                         <div className="prose prose-sm max-w-none">
-                          <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-line text-base">
-                            {currentConsultation.response}
-                          </p>
+                          {currentConsultation.sections ? (
+                            // Render structured sections
+                            <div className="space-y-4">
+                              {currentConsultation.sections.assessment && (
+                                <div>
+                                  <h4 className="font-bold text-blue-600 dark:text-blue-400 mb-2">
+                                    📋 Assessment:
+                                  </h4>
+                                  <p className="text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                                    {currentConsultation.sections.assessment}
+                                  </p>
+                                </div>
+                              )}
+                              {currentConsultation.sections.possibleCauses &&
+                                currentConsultation.sections.possibleCauses
+                                  .length > 0 && (
+                                  <div>
+                                    <h4 className="font-bold text-green-600 dark:text-green-400 mb-2">
+                                      🔍 Possible Causes:
+                                    </h4>
+                                    <ul className="text-sm space-y-1 ml-4 text-gray-800 dark:text-gray-200">
+                                      {currentConsultation.sections.possibleCauses.map(
+                                        (cause, idx) => (
+                                          <li key={idx} className="list-disc">
+                                            {cause}
+                                          </li>
+                                        ),
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+                              {currentConsultation.sections
+                                .recommendedSelfCare &&
+                                currentConsultation.sections.recommendedSelfCare
+                                  .length > 0 && (
+                                  <div>
+                                    <h4 className="font-bold text-orange-600 dark:text-orange-400 mb-2">
+                                      💊 Recommended Self-Care:
+                                    </h4>
+                                    <ol className="text-sm space-y-1 ml-4 text-gray-800 dark:text-gray-200">
+                                      {currentConsultation.sections.recommendedSelfCare.map(
+                                        (care, idx) => (
+                                          <li
+                                            key={idx}
+                                            className="list-decimal"
+                                          >
+                                            {care}
+                                          </li>
+                                        ),
+                                      )}
+                                    </ol>
+                                  </div>
+                                )}
+                              {currentConsultation.sections.warningSigns &&
+                                currentConsultation.sections.warningSigns
+                                  .length > 0 && (
+                                  <div>
+                                    <h4 className="font-bold text-red-600 dark:text-red-400 mb-2">
+                                      ⚠️ Warning Signs:
+                                    </h4>
+                                    <ul className="text-sm space-y-1 ml-4 text-gray-800 dark:text-gray-200">
+                                      {currentConsultation.sections.warningSigns.map(
+                                        (sign, idx) => (
+                                          <li key={idx} className="list-disc">
+                                            {sign}
+                                          </li>
+                                        ),
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+                              {currentConsultation.sections.whenToSeeDoctor && (
+                                <div>
+                                  <h4 className="font-bold text-purple-600 dark:text-purple-400 mb-2">
+                                    🏥 When to See a Doctor:
+                                  </h4>
+                                  <p className="text-sm leading-relaxed text-gray-800 dark:text-gray-200">
+                                    {
+                                      currentConsultation.sections
+                                        .whenToSeeDoctor
+                                    }
+                                  </p>
+                                </div>
+                              )}
+                              {currentConsultation.sections.importantForYou && (
+                                <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg border-l-4 border-yellow-400">
+                                  <h4 className="font-bold text-yellow-700 dark:text-yellow-300 mb-2">
+                                    📝 Important for You:
+                                  </h4>
+                                  <p className="text-sm leading-relaxed text-yellow-800 dark:text-yellow-200">
+                                    {
+                                      currentConsultation.sections
+                                        .importantForYou
+                                    }
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            // Render plain text response
+                            <p className="text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-line text-base">
+                              {currentConsultation.response}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </motion.div>
@@ -1191,7 +1295,7 @@ export default function VoiceConsultation() {
                       <p className="text-gray-500 dark:text-gray-400">Date</p>
                       <p className="text-gray-900 dark:text-white font-medium">
                         {new Date(
-                          selectedHistoryItem.timestamp
+                          selectedHistoryItem.timestamp,
                         ).toLocaleDateString()}
                       </p>
                     </div>
@@ -1199,7 +1303,7 @@ export default function VoiceConsultation() {
                       <p className="text-gray-500 dark:text-gray-400">Time</p>
                       <p className="text-gray-900 dark:text-white font-medium">
                         {new Date(
-                          selectedHistoryItem.timestamp
+                          selectedHistoryItem.timestamp,
                         ).toLocaleTimeString()}
                       </p>
                     </div>

@@ -77,7 +77,7 @@ export default function Dashboard() {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
+          },
         );
 
         if (summaryResponse.ok) {
@@ -376,7 +376,7 @@ export default function Dashboard() {
                               {result}
                             </span>
                           </div>
-                        )
+                        ),
                       )}
                     </div>
                   </div>
@@ -418,38 +418,42 @@ export default function Dashboard() {
         >
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-              Medical History Summary
+              {t("dashboard.medicalHistorySummary")}
             </h2>
           </div>
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Basic Information
+                  {t("dashboard.basicInformation")}
                 </h3>
                 <div className="space-y-1 text-sm">
                   <p className="text-gray-600 dark:text-gray-400">
-                    <span className="font-medium">Age:</span>{" "}
+                    <span className="font-medium">{t("dashboard.age")}:</span>{" "}
                     {medicalHistory.patient?.dateOfBirth
                       ? new Date().getFullYear() -
                         new Date(
-                          medicalHistory.patient.dateOfBirth
+                          medicalHistory.patient.dateOfBirth,
                         ).getFullYear()
                       : "Not provided"}
                   </p>
                   <p className="text-gray-600 dark:text-gray-400">
-                    <span className="font-medium">Gender:</span>{" "}
+                    <span className="font-medium">
+                      {t("dashboard.gender")}:
+                    </span>{" "}
                     {medicalHistory.patient?.gender || "Not provided"}
                   </p>
                   <p className="text-gray-600 dark:text-gray-400">
-                    <span className="font-medium">Blood Type:</span>{" "}
+                    <span className="font-medium">
+                      {t("dashboard.bloodType")}:
+                    </span>{" "}
                     {medicalHistory.patient?.bloodType || "Not provided"}
                   </p>
                 </div>
               </div>
               <div>
                 <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Emergency Contact
+                  {t("dashboard.emergencyContact")}
                 </h3>
                 <div className="space-y-1 text-sm">
                   <p className="text-gray-600 dark:text-gray-400">
@@ -566,13 +570,13 @@ export default function Dashboard() {
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                Recent Medical Reports
+                {t("dashboard.latestReports")}
               </h2>
               <Link
                 to="/medical-reports"
                 className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
               >
-                View all
+                {t("dashboard.viewAll")}
               </Link>
             </div>
           </div>
@@ -590,12 +594,12 @@ export default function Dashboard() {
                         {report.originalName}
                       </p>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Uploaded{" "}
+                        {t("dashboard.reportDate")}{" "}
                         {new Date(report.uploadedAt).toLocaleDateString()}
                       </p>
                       {report.extractedInfo && (
                         <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                          ✓ Information extracted successfully
+                          ✓ {t("reports.analysisComplete")}
                         </p>
                       )}
                     </div>
