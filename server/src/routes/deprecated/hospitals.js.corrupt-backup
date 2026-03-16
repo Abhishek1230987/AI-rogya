@@ -1,0 +1,470 @@
+// Final clean hospitals route implementation
+import express from 'express';
+import fetch from 'node-fetch';
+
+const router = express.Router();
+
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const cache = new Map();
+
+const OVERPASS_ENDPOINTS = [process.env.OVERPASS_API_URL, 'https://overpass-api.de/api/interpreter'].filter(Boolean);
+const ENABLE_WEBSITE_SCRAPE = (process.env.ALLOW_WEBSITE_SCRAPE || 'false').toLowerCase() === 'true';
+const ALLOW_SIMULATED = (process.env.ALLOW_SIMULATED || 'false').toLowerCase() === 'true';
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function cacheKey(lat, lng, radius, specialty) {
+  return `${Math.round(Number(lat) * 10000)}/${Math.round(Number(lng) * 10000)}/${radius}/${(specialty || '').toLowerCase()}`;
+}
+
+async function queryOverpass(q) {
+  for (const ep of OVERPASS_ENDPOINTS) {
+    try {
+      const resp = await fetch(ep, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `data=${encodeURIComponent(q)}` });
+      if (!resp.ok) continue;
+      return await resp.json();
+    } catch (err) {
+      await sleep(200);
+    }
+  }
+  return null;
+}
+
+function haversine(aLat, aLon, bLat, bLon) {
+  const R = 6371;
+  const dLat = ((bLat - aLat) * Math.PI) / 180;
+  const dLon = ((bLon - aLon) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((aLat * Math.PI) / 180) * Math.cos((bLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Number((R * c).toFixed(2));
+}
+
+async function fetchNearbyOverpass(lat, lon, radius = 5000) {
+  const q = `[out:json][timeout:25];(node(around:${radius},${lat},${lon})[amenity=hospital];way(around:${radius},${lat},${lon})[amenity=hospital];relation(around:${radius},${lat},${lon})[amenity=hospital];);out center tags;`;
+  const data = await queryOverpass(q);
+  if (!data || !data.elements) return [];
+  return data.elements.map((el, i) => {
+    const tags = el.tags || {};
+    const latVal = el.lat || (el.center && el.center.lat) || null;
+    const lonVal = el.lon || (el.center && el.center.lon) || null;
+    return {
+      id: el.id ? `osm_${el.type}_${el.id}` : `osm_${i}`,
+      name: tags.name || tags.operator || `Hospital ${i + 1}`,
+      address: [tags['addr:housenumber'], tags['addr:street'], tags['addr:place'], tags['addr:suburb'], tags['addr:city']].filter(Boolean).join(', ') || null,
+      phone: tags.phone || tags['contact:phone'] || null,
+      website: tags.website || null,
+      specialties: (tags.specialty || tags.department || '').split(/[;,|/]/).map(s => s && s.trim()).filter(Boolean),
+      raw: tags,
+      location: latVal && lonVal ? { lat: Number(latVal), lng: Number(lonVal) } : null,
+    };
+  }).filter(h => h.location).slice(0, 12).map(h => ({ ...h, distance: haversine(lat, lon, h.location.lat, h.location.lng) }));
+}
+
+async function fetchDetailsByOsmId(id) {
+  const parts = id.split('_');
+  if (parts.length < 3) return null;
+  const type = parts[1];
+  const num = parts.slice(2).join('_');
+  const q = `[out:json][timeout:15];${type}(${num});out tags center;`;
+  const data = await queryOverpass(q);
+  if (!data || !data.elements || !data.elements.length) return null;
+  const el = data.elements[0];
+  const tags = el.tags || {};
+  const latVal = el.lat || (el.center && el.center.lat) || null;
+  const lonVal = el.lon || (el.center && el.center.lon) || null;
+  return {
+    id,
+    name: tags.name || tags.operator || null,
+    address: [tags['addr:housenumber'], tags['addr:street'], tags['addr:place'], tags['addr:suburb'], tags['addr:city']].filter(Boolean).join(', ') || null,
+    phone: tags.phone || tags['contact:phone'] || null,
+    website: tags.website || null,
+    opening_hours: tags.opening_hours || null,
+    specialties: (tags.specialty || tags.department || '').split(/[;,|/]/).map(s => s && s.trim()).filter(Boolean),
+    raw: tags,
+    location: latVal && lonVal ? { lat: Number(latVal), lng: Number(lonVal) } : null,
+    source: 'OpenStreetMap',
+  };
+}
+
+async function scrapeWebsiteForContact(website) {
+  if (!website) return null;
+  try {
+    const resp = await fetch(website, { method: 'GET' });
+    if (!resp.ok) return null;
+    const text = await resp.text();
+    const m = text.match(/href=["']\s*tel:([^"'<>\s]+)/i);
+    if (m && m[1]) return String(m[1]).replace(/[^+0-9]/g, '');
+  } catch (e) {
+    // ignore
+  }
+  return null;
+}
+
+async function enrichPhoneProximity(h) {
+  if (!h || h.phone) return h;
+  if (!h.location) return h;
+  try {
+    const q = `[out:json][timeout:10];(node(around:400,${h.location.lat},${h.location.lng})[phone];way(around:400,${h.location.lat},${h.location.lng})[phone];relation(around:400,${h.location.lat},${h.location.lng})[phone];);out tags;`;
+    const data = await queryOverpass(q);
+    if (data && data.elements && data.elements.length) {
+      for (const el of data.elements) {
+        const tags = el.tags || {};
+        const ph = tags.phone || tags['contact:phone'];
+        if (ph) {
+          h.phone = String(ph).replace(/[^+0-9]/g, '');
+          return h;
+        }
+      }
+    }
+  } catch (e) {}
+  return h;
+}
+
+async function enrichHospitalDetails(h) {
+  const out = { ...h };
+  if (!out.phone) {
+    try {
+      const ph = await enrichPhoneProximity(out);
+      if (ph && ph.phone) out.phone = ph.phone;
+    } catch (e) {}
+    if (!out.phone && out.website && ENABLE_WEBSITE_SCRAPE) {
+      try {
+        const ph2 = await scrapeWebsiteForContact(out.website);
+        if (ph2) out.phone = ph2;
+      } catch (e) {}
+    }
+  }
+  return out;
+}
+
+function simulatedHospitals(lat, lng, specialty, radius) {
+  const baseLat = Number(lat) || 0;
+  const baseLng = Number(lng) || 0;
+  const s = (specialty || 'General').toString();
+  return Array.from({ length: 6 }).map((_, i) => {
+    const offset = (i + 1) * 0.005;
+    return {
+      id: `sim_${i}_${Math.floor(Date.now() / 1000)}`,
+      name: `${s} Care Hospital ${i + 1}`,
+      address: `Near landmark ${i + 1}`,
+      location: { lat: baseLat + offset, lng: baseLng + offset },
+      phone: null,
+      website: null,
+      opening_hours: null,
+      specialties: [s],
+      distance: haversine(baseLat, baseLng, baseLat + offset, baseLng + offset),
+      source: 'Simulated',
+    };
+  });
+}
+
+router.post('/nearby', async (req, res) => {
+  try {
+    const { latitude, longitude, specialty, radius = 5000, onlyMatch = false } = req.body || {};
+    if (!latitude || !longitude) return res.status(400).json({ success: false, message: 'latitude and longitude are required', hospitals: [] });
+    const key = cacheKey(latitude, longitude, radius, specialty);
+    const cached = cache.get(key);
+    if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return res.json({ ...cached.data, cached: true });
+
+    let hospitals = [];
+    try {
+      hospitals = await fetchNearbyOverpass(latitude, longitude, radius);
+    } catch (e) {
+      console.warn('Overpass fetch error', e && (e.message || e));
+    }
+
+    if ((!hospitals || hospitals.length === 0) && ALLOW_SIMULATED) {
+      hospitals = simulatedHospitals(latitude, longitude, specialty, radius);
+    }
+
+    const reqLower = (specialty || '').toLowerCase();
+    const annotated = hospitals.map(h => ({ ...h, matches: reqLower ? ((h.specialties || []).join(' ').toLowerCase().includes(reqLower) || (h.name || '').toLowerCase().includes(reqLower)) : false }));
+    const final = onlyMatch ? annotated.filter(x => x.matches) : annotated;
+
+    for (let i = 0; i < final.length; i++) final[i] = await enrichHospitalDetails(final[i]);
+
+    const payload = { success: true, hospitals: final, source: final.length && final[0].source === 'OpenStreetMap' ? 'OpenStreetMap' : 'Simulated', count: final.length };
+    cache.set(key, { ts: Date.now(), data: payload });
+    return res.json(payload);
+  } catch (e) {
+    console.error('/api/hospitals/nearby error', e);
+    return res.status(500).json({ success: false, message: 'Failed to fetch nearby hospitals', hospitals: [] });
+  }
+});
+
+router.post('/details', async (req, res) => {
+  try {
+    const { id, website, name, lat, lng } = req.body || {};
+    if (id && typeof id === 'string' && id.startsWith('osm_')) {
+      const detail = await fetchDetailsByOsmId(id);
+      if (detail) {
+        const enriched = await enrichHospitalDetails(detail);
+        return res.json({ success: true, details: enriched });
+      }
+    }
+
+    if (website) {
+      if (ENABLE_WEBSITE_SCRAPE) {
+        try {
+          const ph = await scrapeWebsiteForContact(website);
+          if (ph) return res.json({ success: true, details: { id: id || null, name: name || null, phone: ph, website } });
+        } catch (e) {}
+      }
+      return res.status(404).json({ success: false, message: 'details not found' });
+    }
+
+    return res.status(404).json({ success: false, message: 'details not found' });
+  } catch (e) {
+    console.error('/api/hospitals/details error', e);
+    return res.status(500).json({ success: false, message: 'Failed to fetch details' });
+  }
+});
+
+export default router;
+                  try {
+                    const { id, website, name, lat, lng } = req.body || {};
+                    let detail = null;
+                    if (id && typeof id === "string" && id.startsWith("osm_")) {
+                      const parts = id.split("_");
+                      if (parts.length >= 3) {
+                        const type = parts[1];
+                        const num = parts.slice(2).join("_");
+                        const q = `[out:json][timeout:15];${type}(${num});out tags center;`;
+                        for (const ep of DEFAULT_OVERPASS_ENDPOINTS) {
+                          try {
+                            const resp = await fetch(ep, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "E-Consultancy-App/1.0" }, body: `data=${encodeURIComponent(q)}` });
+                            if (!resp.ok) continue;
+                            const data = await resp.json();
+                            if (data.elements && data.elements.length) {
+                              const el = data.elements[0];
+                              const tags = el.tags || {};
+                              const latVal = el.lat || (el.center && el.center.lat) || (el.center && el.center[0]);
+                              const lonVal = el.lon || (el.center && el.center.lon) || (el.center && el.center[1]);
+                              detail = {
+                                id,
+                                name: tags.name || tags.operator || name || null,
+                                address: [tags["addr:housenumber"], tags["addr:street"], tags["addr:place"], tags["addr:suburb"], tags["addr:city"]].filter(Boolean).join(", ") || null,
+                                phone: tags.phone || tags["contact:phone"] || null,
+                                website: tags.website || null,
+                                opening_hours: tags.opening_hours || null,
+                                location: latVal ? { lat: Number(latVal), lng: Number(lonVal) } : (lat && lng ? { lat, lng } : null),
+                                specialties: extractSpecialtiesFromTags(tags),
+                                raw: tags,
+                                source: "OpenStreetMap",
+                              };
+                              break;
+                            }
+                          } catch (e) {
+                            // try next endpoint
+                          }
+                        }
+                      }
+                    }
+
+                    if (!detail && website) {
+                      detail = { id: id || null, name: name || null, website, phone: null, address: null, location: lat && lng ? { lat, lng } : null, source: "Website" };
+                      if (ENABLE_WEBSITE_SCRAPE) {
+                        try {
+                          const ph = await scrapeWebsiteForContact(website);
+                          if (ph) detail.phone = ph;
+                        } catch (e) {}
+                      }
+                    }
+
+                    if (!detail) return res.status(404).json({ success: false, message: "Details not found" });
+                    const enriched = await enrichHospitalDetails(detail);
+                    return res.json({ success: true, details: enriched });
+                  } catch (e) {
+                    console.error("/api/hospitals/details error", e);
+                    return res.status(500).json({ success: false, message: "Failed to fetch details" });
+                  }
+                });
+
+                export default router;
+                  return null;
+                } catch (e) {
+                  return null;
+                }
+              }
+
+              async function enrichHospitalDetails(h) {
+                const out = { ...h };
+                if (!out.phone) {
+                  // First try proximity Overpass lookup for phone
+                  try {
+                    const ph = await fetchPhoneForHospital(out.name, out.location?.lat, out.location?.lng, 400);
+                    if (ph) out.phone = ph;
+                  } catch (e) {
+                    // ignore
+                  }
+                  // Then try website scraping if allowed
+                  if (!out.phone && out.website && ENABLE_WEBSITE_SCRAPE) {
+                    try {
+                      const ph2 = await scrapeWebsiteForContact(out.website);
+                      if (ph2) out.phone = ph2;
+                    } catch (e) {}
+                  }
+                }
+                return out;
+              }
+
+              router.post("/nearby", async (req, res) => {
+                try {
+                  const { latitude, longitude, specialty, radius = 5000, onlyMatch = false } = req.body || {};
+                  if (!latitude || !longitude) return res.status(400).json({ success: false, message: "latitude and longitude are required", hospitals: [] });
+                  const key = makeCacheKey(latitude, longitude, radius, specialty);
+                  const cached = getCached(key);
+                  if (cached) return res.json({ ...cached, cached: true });
+                  let hospitals = await fetchOverpass(latitude, longitude, radius);
+                  const requestedCanonical = findCanonicalSpecialty(specialty);
+                  const annotated = hospitals.map((h) => ({ ...h, matches: requestedCanonical ? hospitalMatchesSpecialty(h, requestedCanonical) : false }));
+                  const final = onlyMatch ? annotated.filter((x) => x.matches) : annotated;
+                  // enrich phones (sequential to avoid hammering endpoints)
+                  for (let i = 0; i < final.length; i++) final[i] = await enrichHospitalDetails(final[i]);
+                  const payload = { success: true, hospitals: final, source: hospitals.length ? "OpenStreetMap/Overpass" : "Simulated", count: final.length };
+                  setCached(key, payload);
+                  return res.json(payload);
+                } catch (e) {
+                  console.error("/api/hospitals/nearby error", e);
+                  return res.status(500).json({ success: false, message: "Failed to fetch nearby hospitals", hospitals: [] });
+                }
+              });
+
+              router.post("/details", async (req, res) => {
+                try {
+                  const { id, website, name, lat, lng } = req.body || {};
+                  let detail = null;
+                  if (id && typeof id === "string" && id.startsWith("osm_")) {
+                    const parts = id.split("_");
+                    if (parts.length >= 3) {
+                      const type = parts[1];
+                      const num = parts.slice(2).join("_");
+                      const q = `[out:json][timeout:15];${type}(${num});out tags center;`;
+                      for (const ep of DEFAULT_OVERPASS_ENDPOINTS) {
+                        try {
+                          const resp = await fetch(ep, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "E-Consultancy-App/1.0" }, body: `data=${encodeURIComponent(q)}` });
+                          if (!resp.ok) continue;
+                          const data = await resp.json();
+                          if (data.elements && data.elements.length) {
+                            const el = data.elements[0];
+                            const tags = el.tags || {};
+                            const latVal = el.lat || (el.center && el.center.lat) || (el.center && el.center[0]);
+                            const lonVal = el.lon || (el.center && el.center.lon) || (el.center && el.center[1]);
+                            detail = {
+                              id,
+                              name: tags.name || tags.operator || name || null,
+                              address: [tags["addr:housenumber"], tags["addr:street"], tags["addr:place"], tags["addr:suburb"], tags["addr:city"]].filter(Boolean).join(", ") || null,
+                              phone: tags.phone || tags["contact:phone"] || null,
+                              website: tags.website || null,
+                              opening_hours: tags.opening_hours || null,
+                              location: latVal ? { lat: Number(latVal), lng: Number(lonVal) } : (lat && lng ? { lat, lng } : null),
+                              specialties: extractSpecialtiesFromTags(tags),
+                              raw: tags,
+                              source: "OpenStreetMap",
+                            };
+                            break;
+                          }
+                        } catch (e) {
+                          // try next endpoint
+                        }
+                      }
+                    }
+                  }
+                  if (!detail && website) {
+                    detail = { id: id || null, name: name || null, website, phone: null, address: null, location: lat && lng ? { lat, lng } : null, source: "Website" };
+                    if (ENABLE_WEBSITE_SCRAPE) {
+                      try {
+                        const ph = await scrapeWebsiteForContact(website);
+                        if (ph) detail.phone = ph;
+                      } catch (e) {}
+                    }
+                  }
+                  if (!detail) return res.status(404).json({ success: false, message: "Details not found" });
+                  // attempt to further enrich (phone via proximity/search) if not present
+                  const enriched = await enrichHospitalDetails(detail);
+                  return res.json({ success: true, details: enriched });
+                } catch (e) {
+                  console.error("/api/hospitals/details error", e);
+                  return res.status(500).json({ success: false, message: "Failed to fetch details" });
+                }
+              });
+
+              export default router;
+router.post("/nearby", async (req, res) => {
+  try {
+    const { latitude, longitude, specialty, radius = 5000 } = req.body || {};
+    if (!latitude || !longitude)
+      return res.status(400).json({
+        success: false,
+        message: "latitude and longitude are required",
+        hospitals: [],
+      });
+
+    const key = makeCacheKey(latitude, longitude, radius, specialty);
+    const cached = getCached(key);
+    if (cached) return res.json({ ...cached, cached: true });
+
+    let osm = [];
+    try {
+      osm = await fetchOverpass(latitude, longitude, radius);
+    } catch (e) {
+      console.warn("Overpass error", e && (e.message || e));
+    }
+
+    if (osm && osm.length) {
+      const requestedCanonical = findCanonicalSpecialty(specialty);
+      const annotated = osm.map((h) => ({
+        ...h,
+        matches: hospitalMatchesSpecialty(h, requestedCanonical),
+      }));
+      const onlyMatch = Boolean(req.body && req.body.onlyMatch);
+      const final = onlyMatch ? annotated.filter((h) => h.matches) : annotated;
+      const payload = {
+        success: true,
+        hospitals: final,
+        source: "OpenStreetMap/Overpass",
+        count: final.length,
+      };
+      setCached(key, payload);
+      return res.json(payload);
+    }
+
+    // When Overpass returns no results, return a small simulated fallback (so UI shows items).
+    const mock = simulatedHospitals(
+      latitude,
+      longitude,
+      specialty,
+      radius
+    ).slice(0, 6);
+    const requestedCanonical = findCanonicalSpecialty(specialty);
+    const annotatedMock = mock.map((h) => ({
+      ...h,
+      matches: hospitalMatchesSpecialty(h, requestedCanonical),
+    }));
+    const onlyMatch = Boolean(req.body && req.body.onlyMatch);
+    const finalMock = onlyMatch
+      ? annotatedMock.filter((h) => h.matches)
+      : annotatedMock;
+    const payload = {
+      success: true,
+      hospitals: finalMock,
+      source: "Simulated",
+      count: finalMock.length,
+      simulatedFallback: true,
+      message: ALLOW_SIMULATED
+        ? "Using simulated hospital data as a fallback."
+        : "No OpenStreetMap results — returning a simulated fallback for UI testing. Set ALLOW_SIMULATED=true to enable persistent simulated data.",
+    };
+    setCached(key, payload);
+    return res.json(payload);
+  } catch (err) {
+    console.error("hospitals route error", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch nearby hospitals",
+      hospitals: [],
+    });
+  }
+});
+
+export default router;

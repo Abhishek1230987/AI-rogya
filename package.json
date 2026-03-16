@@ -1,0 +1,17 @@
+{
+  "name": "e-consultancy",
+  "version": "1.0.0",
+  "description": "Modern E-Consultancy platform with real-time features",
+  "scripts": {
+    "start": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "install-all": "npm install && cd client && npm install && cd ../server && npm install"
+  },
+  "keywords": ["medical", "consultation", "telemedicine", "MERN"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
