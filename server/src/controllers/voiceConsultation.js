@@ -406,19 +406,19 @@ export const textConsultation = async (req, res) => {
       try {
         const pool = (await import("../config/database.js")).default;
         const historyQuery = `
-          SELECT original_text, ai_response, created_at, detected_language
+          SELECT original_message, medical_response, timestamp, detected_language
           FROM voice_consultations 
           WHERE user_id = $1 
-          ORDER BY created_at DESC 
+          ORDER BY timestamp DESC 
           LIMIT 10
         `;
         const historyResult = await pool.query(historyQuery, [req.user.id]);
 
         if (historyResult.rows.length > 0) {
           consultationHistory = historyResult.rows.map((consultation) => ({
-            userMessage: consultation.original_text,
-            medicalResponse: consultation.ai_response,
-            timestamp: consultation.created_at,
+            userMessage: consultation.original_message,
+            medicalResponse: consultation.medical_response,
+            timestamp: consultation.timestamp,
             language: consultation.detected_language,
           }));
           console.log(
