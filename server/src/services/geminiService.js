@@ -181,7 +181,7 @@ Please provide a JSON response with the following structure:
 Only include fields where you found actual data. Return valid JSON only, no additional text.`;
 
       const result = await this.model.generateContent(prompt);
-      const response = await result.response;
+      const response = result.response;
       const textResponse = response.text();
 
       // Try to parse JSON from response
@@ -711,7 +711,7 @@ Provide your PERSONALIZED, WELL-STRUCTURED medical advice now:`;
 
       try {
         const result = await this.generateContentWithRetry(prompt);
-        const response = await result.response;
+        const response = result.response;
         medicalResponse = response.text();
 
         // Parse the structured response into sections
@@ -906,7 +906,7 @@ Provide a JSON response with:
 }`;
 
       const result = await this.model.generateContent(prompt);
-      const response = await result.response;
+      const response = result.response;
       const textResponse = response.text();
 
       try {
