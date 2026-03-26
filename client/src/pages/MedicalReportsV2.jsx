@@ -27,7 +27,7 @@ export default function MedicalReportsV2() {
   const [lastUploadAnalysis, setLastUploadAnalysis] = useState(null);
 
   // Get auth token
-  const getToken = () => localStorage.getItem("token");
+  const getToken = () => sessionStorage.getItem("token") || localStorage.getItem("token");
 
   // Fetch reports on mount
   useEffect(() => {

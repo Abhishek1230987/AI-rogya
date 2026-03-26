@@ -315,7 +315,7 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
         console.log("📤 Sending to AI for medical consultation...");
 
         // Send recognized text directly to text-consultation endpoint
-        const token = localStorage.getItem("token");
+        const token = sessionStorage.getItem("token") || localStorage.getItem("token");
         const response = await fetch(API_ENDPOINTS.VOICE_TEXT_CONSULTATION, {
           method: "POST",
           headers: {
@@ -376,7 +376,7 @@ const VoiceRecorder = ({ onAudioRecorded, onTranscriptionReceived }) => {
         // If we have an audio blob, upload it to the server for transcription
         if (audioBlob) {
           try {
-            const token = localStorage.getItem("token");
+            const token = sessionStorage.getItem("token") || localStorage.getItem("token");
             const form = new FormData();
             form.append("audio", audioBlob, "recording.webm");
             form.append(

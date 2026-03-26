@@ -37,7 +37,7 @@ export default function MedicalReports() {
   useEffect(() => {
     const loadUploadedDocuments = async () => {
       try {
-        const token = localStorage.getItem("token");
+        const token = sessionStorage.getItem("token") || localStorage.getItem("token");
         const response = await fetch(API_ENDPOINTS.MEDICAL_REPORTS, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -85,7 +85,7 @@ export default function MedicalReports() {
     }
 
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       console.log("🗑️ Deleting document:", {
         documentId,
         fileName,
@@ -241,7 +241,7 @@ export default function MedicalReports() {
 
     setUploading(true);
     setProcessing(true);
-    const token = localStorage.getItem("token");
+    const token = sessionStorage.getItem("token") || localStorage.getItem("token");
     console.log(
       "🔑 Token from localStorage:",
       token ? `${token.substring(0, 20)}...` : "No token"
@@ -340,7 +340,7 @@ export default function MedicalReports() {
 
     // Reload uploaded documents list
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       const response = await fetch(API_ENDPOINTS.MEDICAL_REPORTS, {
         headers: {
           Authorization: `Bearer ${token}`,

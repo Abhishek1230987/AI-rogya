@@ -21,7 +21,8 @@ export default function AuthCallback() {
     if (token && userData) {
       try {
         const user = JSON.parse(decodeURIComponent(userData));
-        localStorage.setItem("token", token);
+        sessionStorage.setItem("token", token);
+        localStorage.removeItem("token");
         setUser(user);
         navigate("/dashboard");
       } catch (err) {

@@ -26,7 +26,7 @@ export default function VoiceConsultation() {
       if (!user) return;
 
       try {
-        const token = localStorage.getItem("token");
+        const token = sessionStorage.getItem("token") || localStorage.getItem("token");
         const response = await fetch(
           "http://localhost:5000/api/voice/history",
           {
@@ -85,7 +85,7 @@ export default function VoiceConsultation() {
     setIsSubmittingText(true);
 
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       const response = await fetch(
         "http://localhost:5000/api/voice/text-consultation",
         {

@@ -4,7 +4,10 @@ import i18n from "./i18n";
 import Layout from "./components/Layout.jsx";
 import Home from "./pages/Home.jsx";
 import Login from "./pages/Login.jsx";
+import DoctorLogin from "./pages/DoctorLogin.jsx";
+import DoctorRegister from "./pages/DoctorRegister.jsx";
 import Register from "./pages/Register.jsx";
+import DoctorDashboard from "./pages/DoctorDashboard.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import Consultation from "./pages/Consultation.jsx";
 import BookAppointment from "./pages/BookAppointment.jsx";
@@ -26,6 +29,8 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route index element={<Home />} />
             <Route path="login" element={<Login />} />
+            <Route path="doctor-login" element={<DoctorLogin />} />
+            <Route path="doctor-register" element={<DoctorRegister />} />
             <Route path="register" element={<Register />} />
 
             {/* Public Routes - No authentication required */}
@@ -61,6 +66,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <VideoCall />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="doctor-dashboard"
+              element={
+                <ProtectedRoute requiredRole="doctor">
+                  <DoctorDashboard />
                 </ProtectedRoute>
               }
             />

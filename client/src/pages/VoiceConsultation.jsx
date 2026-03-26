@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../contexts/AuthContext";
@@ -45,6 +45,7 @@ export default function VoiceConsultation() {
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmAction, setConfirmAction] = useState(null);
   const [currentAudio, setCurrentAudio] = useState(null);
+  const narrationCancelledRef = useRef(false);
 
   // Initialize speech synthesis
   useEffect(() => {
@@ -67,7 +68,7 @@ export default function VoiceConsultation() {
     console.log("📥 Loading consultation history from database...");
 
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       if (!token) {
         console.error("❌ No auth token found");
         return;
@@ -136,7 +137,7 @@ export default function VoiceConsultation() {
     setConfirmOpen(false);
     setDeletingId(id);
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       console.log("🗑️ Deleting consultation", id, "token present:", !!token);
       const res = await fetch(`${API_URL}/api/voice/${id}`, {
         method: "DELETE",
@@ -174,7 +175,7 @@ export default function VoiceConsultation() {
     setConfirmAction(() => async () => {
       setIsClearing(true);
       try {
-        const token = localStorage.getItem("token");
+        const token = sessionStorage.getItem("token") || localStorage.getItem("token");
         const res = await fetch(`${API_URL}/api/voice`, {
           method: "DELETE",
           headers: {
@@ -209,6 +210,11 @@ export default function VoiceConsultation() {
     console.log("Audio recorded:", audioBlob);
   };
 
+  const startDoctorVideoCall = () => {
+    const roomId = `consult-${Math.random().toString(36).slice(2, 8)}`;
+    window.location.assign(`/video-call?room=${roomId}&role=patient`);
+  };
+
   const handleTranscriptionReceived = (
     originalMessage,
     transcription,
@@ -239,7 +245,7 @@ export default function VoiceConsultation() {
     setIsSubmittingText(true);
 
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       const response = await fetch(API_ENDPOINTS.VOICE_TEXT_CONSULTATION, {
         method: "POST",
         headers: {
@@ -309,6 +315,85 @@ export default function VoiceConsultation() {
     setSelectedHistoryItem(null);
   };
 
+  const getNarrationText = (item) => {
+    if (!item) return "";
+
+    if (typeof item === "string") {
+      return item.trim();
+    }
+
+    const sectionParts = [];
+    if (item.sections?.assessment) {
+      sectionParts.push(`Assessment: ${item.sections.assessment}`);
+    }
+    if (
+      Array.isArray(item.sections?.possibleCauses) &&
+      item.sections.possibleCauses.length > 0
+    ) {
+      sectionParts.push(
+        `Possible causes: ${item.sections.possibleCauses.join(", ")}`,
+      );
+    }
+    if (
+      Array.isArray(item.sections?.recommendations) &&
+      item.sections.recommendations.length > 0
+    ) {
+      sectionParts.push(
+        `Recommendations: ${item.sections.recommendations.join(", ")}`,
+      );
+    }
+
+    return (
+      item.response ||
+      (sectionParts.length > 0 ? sectionParts.join(". ") : "") ||
+      item.transcription ||
+      item.originalMessage ||
+      ""
+    ).trim();
+  };
+
+  const splitTextForSpeech = (text, maxChunkLength = 220) => {
+    const sanitized = String(text || "")
+      .replace(/\*\*/g, "")
+      .replace(/`/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!sanitized) return [];
+
+    const sentences = sanitized.split(/(?<=[.!?।])\s+/);
+    const chunks = [];
+    let current = "";
+
+    for (const sentence of sentences) {
+      if (!sentence) continue;
+
+      if ((current + " " + sentence).trim().length <= maxChunkLength) {
+        current = (current + " " + sentence).trim();
+        continue;
+      }
+
+      if (current) {
+        chunks.push(current);
+      }
+
+      if (sentence.length <= maxChunkLength) {
+        current = sentence.trim();
+      } else {
+        for (let i = 0; i < sentence.length; i += maxChunkLength) {
+          chunks.push(sentence.slice(i, i + maxChunkLength).trim());
+        }
+        current = "";
+      }
+    }
+
+    if (current) {
+      chunks.push(current);
+    }
+
+    return chunks.filter(Boolean);
+  };
+
   // Narration Functions for Text-to-Speech
   const detectLanguageFromText = (text) => {
     // Detect language based on script with more specific patterns
@@ -353,6 +438,13 @@ export default function VoiceConsultation() {
   };
 
   const handleNarration = async (text) => {
+    const narrationText = getNarrationText(text);
+
+    if (!narrationText) {
+      alert("No text available to read aloud yet.");
+      return;
+    }
+
     if (!speechSynthesis) {
       alert("Text-to-speech is not supported in your browser");
       return;
@@ -360,6 +452,7 @@ export default function VoiceConsultation() {
 
     // Stop any ongoing speech
     if (isSpeaking) {
+      narrationCancelledRef.current = true;
       speechSynthesis.cancel();
       setIsSpeaking(false);
       return;
@@ -450,59 +543,66 @@ export default function VoiceConsultation() {
         );
 
         if (useServerTTS) {
-          await handleServerNarration(text, selectedLangCode);
+          await handleServerNarration(narrationText, selectedLangCode);
           return;
         }
       }
     }
 
     // Create speech utterance
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = language;
-
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
+    const chunks = splitTextForSpeech(narrationText);
+    if (chunks.length === 0) {
+      alert("No readable text found for narration.");
+      return;
     }
 
-    // Set voice properties for better quality
-    utterance.rate = 0.85; // Slower for better comprehension
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
+    narrationCancelledRef.current = false;
+    setIsSpeaking(true);
+    console.log(`🔊 Narration started with ${chunks.length} chunk(s)`);
 
-    // Event handlers
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      console.log(
-        "🔊 Started speaking in:",
-        language,
-        "with voice:",
-        utterance.voice?.name || "default",
-      );
-    };
-
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      console.log("✅ Finished speaking");
-    };
-
-    utterance.onerror = (event) => {
-      setIsSpeaking(false);
-      console.error("❌ Speech error:", event.error);
-
-      // If error and not English, offer server-side TTS
-      if (language !== "en-US" && event.error !== "canceled") {
-        const retry = confirm(
-          `Browser text-to-speech failed.\n\n` +
-            `Would you like to try cloud-based narration instead?`,
-        );
-        if (retry) {
-          handleServerNarration(text, language);
-        }
+    const speakChunk = (index) => {
+      if (narrationCancelledRef.current || index >= chunks.length) {
+        setIsSpeaking(false);
+        narrationCancelledRef.current = false;
+        console.log("✅ Finished speaking");
+        return;
       }
+
+      const utterance = new SpeechSynthesisUtterance(chunks[index]);
+      utterance.lang = language;
+
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+
+      utterance.rate = 0.85;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      utterance.onend = () => {
+        speakChunk(index + 1);
+      };
+
+      utterance.onerror = (event) => {
+        setIsSpeaking(false);
+        narrationCancelledRef.current = false;
+        console.error("❌ Speech error:", event.error);
+
+        if (language !== "en-US" && event.error !== "canceled") {
+          const retry = confirm(
+            `Browser text-to-speech failed.\n\n` +
+              `Would you like to try cloud-based narration instead?`,
+          );
+          if (retry) {
+            handleServerNarration(narrationText, language);
+          }
+        }
+      };
+
+      speechSynthesis.speak(utterance);
     };
 
-    // Start speaking
-    speechSynthesis.speak(utterance);
+    speakChunk(0);
   };
 
   // Server-side TTS using Google Cloud (fallback for Indian languages)
@@ -511,7 +611,7 @@ export default function VoiceConsultation() {
       setIsSpeaking(true);
       console.log("🌩️ Using server-side TTS for:", language);
 
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       const response = await fetch(`${API_URL}/api/narration/speak`, {
         method: "POST",
         headers: {
@@ -568,6 +668,7 @@ export default function VoiceConsultation() {
 
   const stopNarration = () => {
     console.log("🛑 Stopping narration...");
+    narrationCancelledRef.current = true;
 
     // Stop browser-based TTS
     if (speechSynthesis && isSpeaking) {
@@ -589,6 +690,7 @@ export default function VoiceConsultation() {
   // Stop narration when component unmounts
   useEffect(() => {
     return () => {
+      narrationCancelledRef.current = true;
       if (speechSynthesis) {
         speechSynthesis.cancel();
       }
@@ -597,7 +699,7 @@ export default function VoiceConsultation() {
         currentAudio.currentTime = 0;
       }
     };
-  }, [speechSynthesis]);
+  }, [speechSynthesis, currentAudio]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-slate-900">
@@ -630,6 +732,13 @@ export default function VoiceConsultation() {
                 </p>
               </div>
               <div className="flex items-center space-x-2">
+                <button
+                  onClick={startDoctorVideoCall}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors"
+                  title="Start live doctor video call"
+                >
+                  Live Doctor Call
+                </button>
                 <button
                   onClick={handleClearConsultations}
                   disabled={isClearing}
@@ -845,9 +954,7 @@ export default function VoiceConsultation() {
                               onClick={() =>
                                 isSpeaking
                                   ? stopNarration()
-                                  : handleNarration(
-                                      currentConsultation.response,
-                                    )
+                                  : handleNarration(currentConsultation)
                               }
                               className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all ${
                                 isSpeaking
@@ -1239,7 +1346,7 @@ export default function VoiceConsultation() {
                       onClick={() =>
                         isSpeaking
                           ? stopNarration()
-                          : handleNarration(selectedHistoryItem.response)
+                          : handleNarration(selectedHistoryItem)
                       }
                       className={`flex items-center px-3 py-2 rounded-lg font-medium text-sm transition-all ${
                         isSpeaking

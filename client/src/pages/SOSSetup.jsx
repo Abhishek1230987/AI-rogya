@@ -36,7 +36,7 @@ const SOSSetupGuide = () => {
       setError("");
       setSuccess("");
 
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       const response = await fetch(
         "http://localhost:5000/api/sos/update-contacts",
         {

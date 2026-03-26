@@ -17,10 +17,31 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  const getStoredToken = () =>
+    sessionStorage.getItem("token") || localStorage.getItem("token");
+
+  const storeToken = (token) => {
+    sessionStorage.setItem("token", token);
+    // Keep token tab-scoped for multi-user testing in separate tabs.
+    localStorage.removeItem("token");
+  };
+
+  const clearStoredToken = () => {
+    sessionStorage.removeItem("token");
+    localStorage.removeItem("token");
+  };
+
   // Check for existing token on mount
   useEffect(() => {
     const initAuth = async () => {
-      const token = localStorage.getItem("token");
+      const token = getStoredToken();
+
+      // Migrate old shared token to tab-scoped storage.
+      if (!sessionStorage.getItem("token") && localStorage.getItem("token")) {
+        sessionStorage.setItem("token", localStorage.getItem("token"));
+        localStorage.removeItem("token");
+      }
+
       if (token) {
         try {
           // Validate token by making a request to a protected endpoint
@@ -35,15 +56,15 @@ export function AuthProvider({ children }) {
             if (userData.success && userData.user) {
               setUser(userData.user);
             } else {
-              localStorage.removeItem("token");
+              clearStoredToken();
             }
           } else {
             // Token is invalid, remove it
-            localStorage.removeItem("token");
+            clearStoredToken();
           }
         } catch (error) {
           console.error("Token validation error:", error);
-          localStorage.removeItem("token");
+          clearStoredToken();
         }
       }
       setLoading(false);
@@ -95,12 +116,62 @@ export function AuthProvider({ children }) {
 
       const data = await response.json();
       setUser(data.user);
-      localStorage.setItem("token", data.token);
+      storeToken(data.token);
 
       // Check if user has completed medical history
       await checkMedicalHistoryStatus(data.token);
     } catch (error) {
       console.error("Login error:", error);
+      throw error;
+    }
+  };
+
+  const loginDoctor = async (email, password) => {
+    try {
+      const response = await fetch(API_ENDPOINTS.AUTH_DOCTOR_LOGIN, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.message || "Doctor login failed");
+      }
+
+      const data = await response.json();
+      setUser(data.user);
+      storeToken(data.token);
+      navigate("/doctor-dashboard");
+    } catch (error) {
+      console.error("Doctor login error:", error);
+      throw error;
+    }
+  };
+
+  const registerDoctor = async (name, email, password, inviteCode) => {
+    try {
+      const response = await fetch(API_ENDPOINTS.AUTH_DOCTOR_REGISTER, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name, email, password, inviteCode }),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.message || "Doctor registration failed");
+      }
+
+      const data = await response.json();
+      setUser(data.user);
+      storeToken(data.token);
+      navigate("/doctor-dashboard");
+    } catch (error) {
+      console.error("Doctor registration error:", error);
       throw error;
     }
   };
@@ -128,7 +199,7 @@ export function AuthProvider({ children }) {
           .catch(() => ({ message: "Unknown error" }));
         console.error(" Registration failed:", errorData);
         throw new Error(
-          errorData.message || errorData.error || "Registration failed"
+          errorData.message || errorData.error || "Registration failed",
         );
       }
 
@@ -136,7 +207,7 @@ export function AuthProvider({ children }) {
       console.log(" Registration successful:", data.user);
 
       setUser(data.user);
-      localStorage.setItem("token", data.token);
+      storeToken(data.token);
 
       // New users should complete medical history
       navigate("/medical-history");
@@ -148,7 +219,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem("token");
+    clearStoredToken();
     navigate("/");
   };
 
@@ -156,6 +227,8 @@ export function AuthProvider({ children }) {
     user,
     loading,
     login,
+    loginDoctor,
+    registerDoctor,
     register,
     logout,
     setUser: (userData) => setUser(userData),

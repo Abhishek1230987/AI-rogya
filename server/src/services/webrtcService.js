@@ -4,14 +4,39 @@ import { Server } from "socket.io";
 let io;
 const rooms = new Map(); // Store active rooms and participants
 const userSockets = new Map(); // Map userId to socketId
+const userProfiles = new Map(); // Map userId to { userId, userName, role, socketId, connectedAt }
+
+const emitOnlineUsers = () => {
+  io.emit("users:online", Array.from(userProfiles.values()));
+};
+
+const getOnlineDoctors = () =>
+  Array.from(userProfiles.values()).filter(
+    (profile) => profile.role === "doctor",
+  );
 
 /**
  * Initialize Socket.IO server for WebRTC signaling
  */
 export const initializeSocketIO = (httpServer) => {
+  const allowedOrigins = [
+    process.env.CLIENT_URL || "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+  ];
+
   io = new Server(httpServer, {
     cors: {
-      origin: process.env.CLIENT_URL || "http://localhost:5173",
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(new Error(`Socket.IO CORS blocked for origin: ${origin}`));
+      },
       methods: ["GET", "POST"],
       credentials: true,
     },
@@ -23,16 +48,78 @@ export const initializeSocketIO = (httpServer) => {
     console.log(`✅ New socket connection: ${socket.id}`);
 
     // User joins with their user ID
-    socket.on("user:join", ({ userId, userName }) => {
+    socket.on("user:join", ({ userId, userName, role = "patient" }) => {
       socket.userId = userId;
       socket.userName = userName;
+      socket.userRole = role;
       userSockets.set(userId, socket.id);
+      userProfiles.set(userId, {
+        userId,
+        userName,
+        role,
+        socketId: socket.id,
+        connectedAt: new Date().toISOString(),
+      });
 
       console.log(`👤 User ${userName} (${userId}) connected`);
 
-      // Send list of online users
-      socket.emit("users:online", Array.from(userSockets.keys()));
+      // Send latest presence to all connected users
+      emitOnlineUsers();
+      socket.emit("doctors:online", getOnlineDoctors());
     });
+
+    socket.on("doctors:online:get", () => {
+      socket.emit("doctors:online", getOnlineDoctors());
+    });
+
+    socket.on(
+      "call:invite",
+      ({
+        doctorUserId,
+        roomId,
+        patientUserId,
+        patientName,
+        consultationType,
+      }) => {
+        const doctorSocketId = userSockets.get(doctorUserId);
+
+        if (!doctorSocketId) {
+          socket.emit("call:invite:error", {
+            message: "Selected doctor is currently offline.",
+          });
+          return;
+        }
+
+        io.to(doctorSocketId).emit("call:invite", {
+          roomId,
+          patientUserId,
+          patientName,
+          consultationType: consultationType || "video",
+          inviterSocketId: socket.id,
+          invitedAt: new Date().toISOString(),
+        });
+      },
+    );
+
+    socket.on(
+      "call:invite:response",
+      ({
+        inviterSocketId,
+        accepted,
+        roomId,
+        doctorUserId,
+        doctorName,
+        reason,
+      }) => {
+        io.to(inviterSocketId).emit("call:invite:response", {
+          accepted,
+          roomId,
+          doctorUserId,
+          doctorName,
+          reason: reason || null,
+        });
+      },
+    );
 
     // Create or join a video call room
     socket.on("room:join", async ({ roomId, userId, userName, isDoctor }) => {
@@ -61,7 +148,7 @@ export const initializeSocketIO = (httpServer) => {
         });
 
         console.log(
-          `🎥 ${userName} joined room ${roomId} (${room.participants.size} participants)`
+          `🎥 ${userName} joined room ${roomId} (${room.participants.size} participants)`,
         );
 
         // Notify others in the room
@@ -75,7 +162,7 @@ export const initializeSocketIO = (httpServer) => {
 
         // Send current participants to the new joiner
         const participants = Array.from(room.participants.values()).filter(
-          (p) => p.socketId !== socket.id
+          (p) => p.socketId !== socket.id,
         );
 
         socket.emit("room:joined", {
@@ -165,6 +252,8 @@ export const initializeSocketIO = (httpServer) => {
       // Remove from user sockets map
       if (socket.userId) {
         userSockets.delete(socket.userId);
+        userProfiles.delete(socket.userId);
+        emitOnlineUsers();
       }
 
       // Remove from all rooms

@@ -12,6 +12,8 @@ export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 export const API_ENDPOINTS = {
   // Authentication
   AUTH_LOGIN: `${API_URL}/api/auth/login`,
+  AUTH_DOCTOR_LOGIN: `${API_URL}/api/auth/doctor/login`,
+  AUTH_DOCTOR_REGISTER: `${API_URL}/api/auth/doctor/register`,
   AUTH_REGISTER: `${API_URL}/api/auth/register`,
   AUTH_ME: `${API_URL}/api/auth/me`,
   AUTH_GOOGLE: `${API_URL}/api/auth/google`,

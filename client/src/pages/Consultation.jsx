@@ -30,7 +30,7 @@ export default function Consultation() {
   const [historyOffset, setHistoryOffset] = useState(0);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const messagesEndRef = useRef(null);
-  const token = localStorage.getItem("token");
+  const token = sessionStorage.getItem("token") || localStorage.getItem("token");
   const storageKey = user?.id
     ? `consultation_messages_user_${user.id}`
     : "consultation_messages_guest";

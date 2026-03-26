@@ -20,11 +20,13 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     // Initialize socket connection
     const newSocket = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      upgrade: true,
       withCredentials: true,
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 20,
+      timeout: 20000,
     });
 
     // Connection event listeners

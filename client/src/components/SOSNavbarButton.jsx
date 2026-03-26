@@ -153,7 +153,7 @@ const SOSNavbarButton = () => {
         formData.append("audio", audioBlob, "sos-audio.wav");
       }
 
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
       const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
       const response = await fetch(`${API_URL}/api/sos/send`, {
         method: "POST",

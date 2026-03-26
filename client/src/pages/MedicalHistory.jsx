@@ -94,7 +94,7 @@ export default function MedicalHistory() {
       if (!user) return;
 
       try {
-        const token = localStorage.getItem("token");
+        const token = sessionStorage.getItem("token") || localStorage.getItem("token");
         const response = await fetch(API_ENDPOINTS.MEDICAL_HISTORY, {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -225,7 +225,7 @@ export default function MedicalHistory() {
     setError("");
 
     try {
-      const token = localStorage.getItem("token");
+      const token = sessionStorage.getItem("token") || localStorage.getItem("token");
 
       const requestBody = {
         patient: {

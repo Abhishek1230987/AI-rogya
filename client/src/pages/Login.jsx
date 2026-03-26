@@ -43,6 +43,13 @@ export default function Login() {
           {t("auth.loginTitle")}
         </h2>
 
+        <p className="text-xs text-center text-gray-500 dark:text-gray-400 mb-5">
+          Doctor?{" "}
+          <Link to="/doctor-login" className="text-blue-600 hover:underline">
+            Use doctor login
+          </Link>
+        </p>
+
         {error && (
           <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-md mb-4">
             {error}

@@ -31,7 +31,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = localStorage.getItem("token");
+        const token = sessionStorage.getItem("token") || localStorage.getItem("token");
 
         // Fetch medical history
         const historyResponse = await fetch(API_ENDPOINTS.MEDICAL_HISTORY, {
